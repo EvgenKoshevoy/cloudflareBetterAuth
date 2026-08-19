@@ -1,0 +1,27 @@
+{
+  "name": "cloudflare-better-auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.1",
+    "better-auth": "1.7.1",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.3"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "typescript": "7.0.2",
+    "wrangler": "4.124.0"
+  }
+}
