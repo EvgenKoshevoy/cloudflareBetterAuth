@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local `wrangler dev` (never commit the real file).
+BETTER_AUTH_SECRET=replace-with-a-32-byte-random-string
+BETTER_AUTH_URL=http://localhost:8787
+TRUSTED_ORIGINS=http://localhost:3000
+# Blank on purpose: wrangler.jsonc sets COOKIE_DOMAIN=".imadeit.dev" for
+# prod, and `vars` from wrangler.jsonc still apply under `wrangler dev`
+# unless overridden here - a fixed cookie domain breaks cookies on localhost.
+COOKIE_DOMAIN=
