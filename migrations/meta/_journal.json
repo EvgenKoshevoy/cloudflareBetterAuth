@@ -5,8 +5,43 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1787213152826,
-      "tag": "0000_colorful_patch",
+      "when": 1787216754649,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787216790266,
+      "tag": "0001_oauth_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787222220879,
+      "tag": "0002_dapper_tigra",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787233278450,
+      "tag": "0003_careful_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787234063936,
+      "tag": "0004_sweet_gambit",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787260088372,
+      "tag": "0005_add_jwks_table",
       "breakpoints": true
     }
   ]

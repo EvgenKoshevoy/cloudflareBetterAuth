@@ -1,17 +1,18 @@
 import { sqliteTable } from 'drizzle-orm/sqlite-core';
 import * as t from 'drizzle-orm/sqlite-core';
 
-// Schema matches better-auth's core tables (user, session, account, verification).
-// Update by hand if you add plugins/fields to src/auth.ts, then `npm run db:generate`.
-
 export const user = sqliteTable(
     'user',
     {
         id: t.text('id').primaryKey(),
         name: t.text('name').notNull(),
-        email: t.text('email').notNull().unique(),
+        email: t.text('email').notNull(),
         emailVerified: t.integer('email_verified', { mode: 'boolean' }).notNull(),
         image: t.text('image'),
+        role: t.text('role'),
+        banned: t.integer('banned', { mode: 'boolean' }),
+        banReason: t.text('ban_reason'),
+        banExpires: t.integer('ban_expires', { mode: 'timestamp' }),
         createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
         updatedAt: t.integer('updated_at', { mode: 'timestamp' }).notNull(),
     },
@@ -26,10 +27,11 @@ export const session = sqliteTable(
             .text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
-        token: t.text('token').notNull().unique(),
+        token: t.text('token').notNull(),
         expiresAt: t.integer('expires_at', { mode: 'timestamp' }).notNull(),
         ipAddress: t.text('ip_address'),
         userAgent: t.text('user_agent'),
+        impersonatedBy: t.text('impersonated_by'),
         createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
         updatedAt: t.integer('updated_at', { mode: 'timestamp' }).notNull(),
     },
@@ -206,3 +208,61 @@ export const oauthClientAssertion = sqliteTable('oauth_client_assertion', {
     id: t.text('id').primaryKey(),
     expiresAt: t.integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
 });
+
+export const oauthResource = sqliteTable('oauth_resource', {
+    id: t.text('id').primaryKey(),
+    identifier: t.text('identifier').notNull().unique(),
+    name: t.text('name').notNull(),
+    accessTokenTtl: t.integer('access_token_ttl'),
+    refreshTokenTtl: t.integer('refresh_token_ttl'),
+    signingAlgorithm: t.text('signing_algorithm'),
+    signingKeyId: t.text('signing_key_id'),
+    allowedScopes: t.text('allowed_scopes', { mode: 'json' }).$type<string[]>(),
+    customClaims: t.text('custom_claims', { mode: 'json' }),
+    dpopBoundAccessTokensRequired: t.integer('dpop_bound_access_tokens_required', { mode: 'boolean' }),
+    disabled: t.integer('disabled', { mode: 'boolean' }),
+    createdAt: t.integer('created_at', { mode: 'timestamp' }),
+    updatedAt: t.integer('updated_at', { mode: 'timestamp' }),
+    policyVersion: t.integer('policy_version'),
+    metadata: t.text('metadata', { mode: 'json' }),
+});
+
+// Signing keys for the `jwt()` plugin (used to sign OAuth access tokens /
+// ID tokens and to serve /api/auth/jwks). Not part of the oauth-provider
+// plugin's own schema - this is better-auth core's jwt plugin table.
+export const jwks = sqliteTable('jwks', {
+    id: t.text('id').primaryKey(),
+    publicKey: t.text('public_key').notNull(),
+    privateKey: t.text('private_key').notNull(),
+    createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+    expiresAt: t.integer('expires_at', { mode: 'timestamp' }),
+    alg: t.text('alg'),
+    crv: t.text('crv'),
+});
+
+export const oauthClientResource = sqliteTable(
+    'oauth_client_resource',
+    {
+        id: t.text('id').primaryKey(),
+        clientId: t
+            .text('client_id')
+            .notNull()
+            .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+        resourceId: t
+            .text('resource_id')
+            .notNull()
+            // References the resource's `identifier` (e.g. "urn:service:serviceb"),
+            // not its internal `id` - the plugin's own canonical schema
+            // (@better-auth/oauth-provider) declares this FK against
+            // oauthResource.identifier and inserts the identifier string
+            // directly as resourceId when linking resources.
+            .references(() => oauthResource.identifier, { onDelete: 'cascade' }),
+        metadata: t.text('metadata', { mode: 'json' }),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }),
+    },
+    (table) => [
+        t.index('oauth_client_resource_client_id_idx').on(table.clientId),
+        t.index('oauth_client_resource_resource_id_idx').on(table.resourceId),
+        t.uniqueIndex('oauth_client_resource_client_resource_idx').on(table.clientId, table.resourceId),
+    ],
+);

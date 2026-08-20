@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
-import { jwt } from 'better-auth/plugins';
+import { admin, jwt } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { createDb } from './db';
 import * as schema from './db/schema';
@@ -16,37 +16,85 @@ export function createAuth(env: Env) {
         database: drizzleAdapter(db, {
             provider: 'sqlite',
             schema,
-            // D1 doesn't support interactive multi-statement transactions the
-            // way node sqlite drivers do - run operations sequentially instead.
             transaction: false,
         }),
         emailAndPassword: {
             enabled: true,
         },
         session: {
-            // Cache the session in a signed cookie so most requests never touch
-            // D1 at all - the single biggest win for auth latency on the edge.
             cookieCache: {
                 enabled: true,
                 maxAge: 5 * 60,
             },
-            expiresIn: 60 * 60 * 24 * 7, // 7 days
-            updateAge: 60 * 60 * 24, // only re-write the session row once a day
+            expiresIn: 60 * 60 * 24 * 7,
+            updateAge: 60 * 60 * 24,
         },
         plugins: [
             jwt(),
+            admin(),
             oauthProvider({
                 loginPage: '/sign-in',
                 consentPage: '/consent',
+                clientPrivileges: async ({ user }) => {
+                    // Every OAuth-client administrative action (create, read,
+                    // list, update, delete, rotate, configure-scopes) is
+                    // restricted to admins. This app has no self-service UI
+                    // for OAuth clients, so there's no reason to allow
+                    // non-admins any of these actions.
+                    return user?.role === 'admin';
+                },
+                // The plugin's own `scopes` allow-list (defaulting to just
+                // the OIDC user-delegated scopes) gates every
+                // client_credentials_scopes value at registration time,
+                // independently of `resources[].allowedScopes` - without
+                // 'serviceb:access' here, registering any client for the
+                // client_credentials grant against ServiceB fails with
+                // invalid_scope.
+                scopes: ['openid', 'profile', 'email', 'offline_access', 'serviceb:access'],
+                // Newly registered clients (dynamic registration and any future
+                // non-admin registration path) get this as their default
+                // delegated-scope ceiling instead of the full `scopes` list above.
+                // Deliberately excludes 'serviceb:access': that scope must stay in
+                // the master `scopes` allow-list (client_credentials_scopes
+                // validation checks against it independently, see
+                // validateClientCredentialsScopes in
+                // @better-auth/oauth-provider/dist/introspect-*.mjs), but it must
+                // NOT be a default capability for a newly registered client. Without
+                // this, a future browser-facing authorization-code client -
+                // registered through the same client-creation path and
+                // auto-linked to ServiceB by clientRegistrationDefaultResources
+                // below - could request scope=serviceb:access&resource=<ServiceB>
+                // with user consent and receive a token indistinguishable from a
+                // genuine M2M client_credentials token (same aud, same scope).
+                clientRegistrationDefaultScopes: ['openid', 'profile', 'email', 'offline_access'],
+                resources: [
+                    {
+                        identifier: env.SERVICE_B_RESOURCE_ID,
+                        name: 'ServiceB',
+                        allowedScopes: ['serviceb:access'],
+                    },
+                    {
+                        // Exists so the M2M smoke test can exercise
+                        // enforcePerClientResources's per-client linkage check
+                        // against a resource that is genuinely configured but to
+                        // which no client is ever linked (it is intentionally
+                        // absent from clientRegistrationDefaultResources below).
+                        // Without a resource like this, requesting an unknown
+                        // resource identifier is rejected by the "resource
+                        // doesn't exist" check before the linkage check ever
+                        // runs, leaving the linkage check untested.
+                        identifier: 'urn:service:unlinked-test',
+                        name: 'Unlinked Test Resource (no client should ever be linked to this)',
+                        allowedScopes: [],
+                    },
+                ],
+                enforcePerClientResources: true,
+                clientRegistrationDefaultResources: [env.SERVICE_B_RESOURCE_ID],
             }),
         ],
         ...(env.COOKIE_DOMAIN
             ? {
                   advanced: {
-                      // e.g. ".imadeit.dev" so auth.imadeit.dev issues cookies usable
-                      // by imadeit.dev and its other subdomains. Left unset in local
-                      // dev (.dev.vars) since a fixed domain breaks cookies on
-                      // localhost.
                       crossSubDomainCookies: {
                           enabled: true,
                           domain: env.COOKIE_DOMAIN,
