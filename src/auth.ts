@@ -16,22 +16,18 @@ export function createAuth(env: Env) {
         database: drizzleAdapter(db, {
             provider: 'sqlite',
             schema,
-            // D1 doesn't support interactive multi-statement transactions the
-            // way node sqlite drivers do - run operations sequentially instead.
             transaction: false,
         }),
         emailAndPassword: {
             enabled: true,
         },
         session: {
-            // Cache the session in a signed cookie so most requests never touch
-            // D1 at all - the single biggest win for auth latency on the edge.
             cookieCache: {
                 enabled: true,
                 maxAge: 5 * 60,
             },
-            expiresIn: 60 * 60 * 24 * 7, // 7 days
-            updateAge: 60 * 60 * 24, // only re-write the session row once a day
+            expiresIn: 60 * 60 * 24 * 7,
+            updateAge: 60 * 60 * 24,
         },
         plugins: [
             jwt(),
@@ -43,10 +39,6 @@ export function createAuth(env: Env) {
         ...(env.COOKIE_DOMAIN
             ? {
                   advanced: {
-                      // e.g. ".imadeit.dev" so auth.imadeit.dev issues cookies usable
-                      // by imadeit.dev and its other subdomains. Left unset in local
-                      // dev (.dev.vars) since a fixed domain breaks cookies on
-                      // localhost.
                       crossSubDomainCookies: {
                           enabled: true,
                           domain: env.COOKIE_DOMAIN,

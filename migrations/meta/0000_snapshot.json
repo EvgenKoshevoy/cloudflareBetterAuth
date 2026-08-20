@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a2a4d161-212c-46b0-9fc2-28dc2ad0e68a",
+  "id": "93843254-371a-45de-b244-02626fe5d9ba",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -11,6 +11,13 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -35,13 +42,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "access_token": {
           "name": "access_token",
           "type": "text",
@@ -51,13 +51,6 @@
         },
         "refresh_token": {
           "name": "refresh_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "id_token": {
-          "name": "id_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -79,6 +72,13 @@
         },
         "scope": {
           "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "id_token": {
+          "name": "id_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -152,9 +152,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -166,15 +166,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
+        "expires_at": {
+          "name": "expires_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -194,9 +187,16 @@
           "notNull": false,
           "autoincrement": false
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

@@ -1,15 +1,12 @@
 import { sqliteTable } from 'drizzle-orm/sqlite-core';
 import * as t from 'drizzle-orm/sqlite-core';
 
-// Schema matches better-auth's core tables (user, session, account, verification).
-// Update by hand if you add plugins/fields to src/auth.ts, then `npm run db:generate`.
-
 export const user = sqliteTable(
     'user',
     {
         id: t.text('id').primaryKey(),
         name: t.text('name').notNull(),
-        email: t.text('email').notNull().unique(),
+        email: t.text('email').notNull(),
         emailVerified: t.integer('email_verified', { mode: 'boolean' }).notNull(),
         image: t.text('image'),
         createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
@@ -26,7 +23,7 @@ export const session = sqliteTable(
             .text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
-        token: t.text('token').notNull().unique(),
+        token: t.text('token').notNull(),
         expiresAt: t.integer('expires_at', { mode: 'timestamp' }).notNull(),
         ipAddress: t.text('ip_address'),
         userAgent: t.text('user_agent'),
