@@ -249,16 +249,12 @@ npm run db:migrate:local
 ```
 Expected: exits 0.
 
-- [ ] **Step 5: Verify the resource is seeded**
+- [ ] **Step 5: Verify the tables exist**
 
 ```bash
-npm run dev &
-sleep 2
-curl -sS http://localhost:8787/api/auth/jwks > /dev/null
-npx wrangler d1 execute DB --local --command "SELECT identifier, name FROM oauth_resource;"
-kill %1
+npx wrangler d1 execute DB --local --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('oauth_resource','oauth_client_resource');"
 ```
-Expected: one row, `identifier = urn:service:serviceb`, `name = ServiceB`. (The `curl` call is what triggers the plugin's boot-time seed on first DB access — a bare dev-server start doesn't touch D1.)
+Expected: both table names listed. (Whether the `urn:service:serviceb` row itself is seeded is verified in Task 3 Step 5, once a request has actually gone through the oauth-provider route handler — a plain `wrangler dev` boot with no matching request may not trigger the seed.)
 
 - [ ] **Step 6: Commit**
 
