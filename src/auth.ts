@@ -51,11 +51,41 @@ export function createAuth(env: Env) {
                 // client_credentials grant against ServiceB fails with
                 // invalid_scope.
                 scopes: ['openid', 'profile', 'email', 'offline_access', 'serviceb:access'],
+                // Newly registered clients (dynamic registration and any future
+                // non-admin registration path) get this as their default
+                // delegated-scope ceiling instead of the full `scopes` list above.
+                // Deliberately excludes 'serviceb:access': that scope must stay in
+                // the master `scopes` allow-list (client_credentials_scopes
+                // validation checks against it independently, see
+                // validateClientCredentialsScopes in
+                // @better-auth/oauth-provider/dist/introspect-*.mjs), but it must
+                // NOT be a default capability for a newly registered client. Without
+                // this, a future browser-facing authorization-code client -
+                // registered through the same client-creation path and
+                // auto-linked to ServiceB by clientRegistrationDefaultResources
+                // below - could request scope=serviceb:access&resource=<ServiceB>
+                // with user consent and receive a token indistinguishable from a
+                // genuine M2M client_credentials token (same aud, same scope).
+                clientRegistrationDefaultScopes: ['openid', 'profile', 'email', 'offline_access'],
                 resources: [
                     {
                         identifier: env.SERVICE_B_RESOURCE_ID,
                         name: 'ServiceB',
                         allowedScopes: ['serviceb:access'],
+                    },
+                    {
+                        // Exists so the M2M smoke test can exercise
+                        // enforcePerClientResources's per-client linkage check
+                        // against a resource that is genuinely configured but to
+                        // which no client is ever linked (it is intentionally
+                        // absent from clientRegistrationDefaultResources below).
+                        // Without a resource like this, requesting an unknown
+                        // resource identifier is rejected by the "resource
+                        // doesn't exist" check before the linkage check ever
+                        // runs, leaving the linkage check untested.
+                        identifier: 'urn:service:unlinked-test',
+                        name: 'Unlinked Test Resource (no client should ever be linked to this)',
+                        allowedScopes: [],
                     },
                 ],
                 enforcePerClientResources: true,
