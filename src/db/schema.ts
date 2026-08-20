@@ -208,3 +208,43 @@ export const oauthClientAssertion = sqliteTable('oauth_client_assertion', {
     id: t.text('id').primaryKey(),
     expiresAt: t.integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
 });
+
+export const oauthResource = sqliteTable('oauth_resource', {
+    id: t.text('id').primaryKey(),
+    identifier: t.text('identifier').notNull().unique(),
+    name: t.text('name').notNull(),
+    accessTokenTtl: t.integer('access_token_ttl'),
+    refreshTokenTtl: t.integer('refresh_token_ttl'),
+    signingAlgorithm: t.text('signing_algorithm'),
+    signingKeyId: t.text('signing_key_id'),
+    allowedScopes: t.text('allowed_scopes', { mode: 'json' }).$type<string[]>(),
+    customClaims: t.text('custom_claims', { mode: 'json' }),
+    dpopBoundAccessTokensRequired: t.integer('dpop_bound_access_tokens_required', { mode: 'boolean' }),
+    disabled: t.integer('disabled', { mode: 'boolean' }),
+    createdAt: t.integer('created_at', { mode: 'timestamp' }),
+    updatedAt: t.integer('updated_at', { mode: 'timestamp' }),
+    policyVersion: t.integer('policy_version'),
+    metadata: t.text('metadata', { mode: 'json' }),
+});
+
+export const oauthClientResource = sqliteTable(
+    'oauth_client_resource',
+    {
+        id: t.text('id').primaryKey(),
+        clientId: t
+            .text('client_id')
+            .notNull()
+            .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+        resourceId: t
+            .text('resource_id')
+            .notNull()
+            .references(() => oauthResource.id, { onDelete: 'cascade' }),
+        metadata: t.text('metadata', { mode: 'json' }),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }),
+    },
+    (table) => [
+        t.index('oauth_client_resource_client_id_idx').on(table.clientId),
+        t.index('oauth_client_resource_resource_id_idx').on(table.resourceId),
+        t.uniqueIndex('oauth_client_resource_client_resource_idx').on(table.clientId, table.resourceId),
+    ],
+);

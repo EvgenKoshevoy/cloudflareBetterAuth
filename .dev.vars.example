@@ -6,3 +6,4 @@ TRUSTED_ORIGINS=http://localhost:3000
 # prod, and `vars` from wrangler.jsonc still apply under `wrangler dev`
 # unless overridden here - a fixed cookie domain breaks cookies on localhost.
 COOKIE_DOMAIN=
+SERVICE_B_RESOURCE_ID=urn:service:serviceb

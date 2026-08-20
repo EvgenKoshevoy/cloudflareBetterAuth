@@ -43,6 +43,15 @@ export function createAuth(env: Env) {
                     // non-admins any of these actions.
                     return user?.role === 'admin';
                 },
+                resources: [
+                    {
+                        identifier: env.SERVICE_B_RESOURCE_ID,
+                        name: 'ServiceB',
+                        allowedScopes: ['serviceb:access'],
+                    },
+                ],
+                enforcePerClientResources: true,
+                clientRegistrationDefaultResources: [env.SERVICE_B_RESOURCE_ID],
             }),
         ],
         ...(env.COOKIE_DOMAIN
