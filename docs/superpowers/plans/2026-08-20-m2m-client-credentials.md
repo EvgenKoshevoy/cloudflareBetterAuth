@@ -4,7 +4,7 @@
 
 **Goal:** Let ServiceA obtain an access token scoped to ServiceB from this auth service, authenticating with a private-key-signed JWT assertion instead of a shared secret.
 
-**Architecture:** Pure configuration of already-installed `better-auth` plugins — no custom auth code. Add the `admin` plugin (role-gates who can register OAuth clients), configure `@better-auth/oauth-provider`'s first-class `resources` entity for ServiceB, and use the plugin's existing `client_credentials` grant + `private_key_jwt` client authentication. Two dev scripts drive registration and an end-to-end smoke test since the project has no test framework installed and adding one is out of scope.
+**Architecture:** Mostly configuration of already-installed `better-auth` plugins, plus one small addition. Add the `admin` plugin (role-gates who can register OAuth clients), configure `@better-auth/oauth-provider`'s first-class `resources` entity for ServiceB, and use the plugin's existing `client_credentials` grant + `private_key_jwt` client authentication. One thin passthrough HTTP route is required (Task 3) because the plugin's own client-registration endpoint that accepts `client_credentials_scopes` (`/admin/oauth2/create-client`) is marked `SERVER_ONLY` by the plugin and cannot be called over HTTP at all — verified in the plugin's source (`node_modules/@better-auth/oauth-provider/dist/authorize-Crqw4_bR.mjs:2533`, `metadata: { SERVER_ONLY: true }`). The route does no authorization of its own; it forwards to `auth.api.adminCreateOAuthClient(...)`, which performs the real `clientPrivileges` check. Two dev scripts drive registration and an end-to-end smoke test since the project has no test framework installed and adding one is out of scope.
 
 **Tech Stack:** better-auth 1.7.1, `@better-auth/oauth-provider` ^1.7.1, Drizzle ORM + D1, Hono, `jose` (JWT signing in dev scripts only), Node.js scripts run against `wrangler dev` + D1 local.
 
@@ -16,7 +16,8 @@
 - ServiceB is identified by an arbitrary string identifier, not a real URL (spec: resource identifier decision).
 - `jwks` is static (stored on the client row), not `jwksUri` (spec: component 3).
 - ServiceB is never registered as an `oauth_client` — it only validates tokens via `/api/auth/jwks` (spec: component 5).
-- `POST /admin/oauth2/create-client` is the only way clients get registered — no custom HTTP route (spec: component 3, "не пишем").
+- The plugin's `auth.api.adminCreateOAuthClient` (backing the `SERVER_ONLY` `/admin/oauth2/create-client` endpoint) is the only way clients get registered with `client_credentials_scopes` set — reached via one thin passthrough route, `POST /api/admin/oauth-clients`, added in Task 3 (spec: component 3, updated).
+- `clientPrivileges` requires `role === "admin"` for every OAuth-client action, not just `create` (spec: component 2, updated — no self-service UI exists in this app).
 - Only one resource (ServiceB) and one client (ServiceA) in scope — no rights matrix (spec: "Вне объёма").
 - First admin user is bootstrapped by hand via direct SQL — no self-service admin promotion flow (spec: component 4).
 
@@ -66,15 +67,13 @@ Add `admin()` to the `plugins` array and add `clientPrivileges` to the `oauthPro
             oauthProvider({
                 loginPage: '/sign-in',
                 consentPage: '/consent',
-                clientPrivileges: async ({ action, user }) => {
-                    // Only admins may register OAuth clients or raise their
-                    // client_credentials scope ceiling; every other action
-                    // (read/list/update/delete/rotate) stays open to any
-                    // authenticated session, matching the plugin's default.
-                    if (action === 'create' || action === 'configure-client-credentials-scopes') {
-                        return user?.role === 'admin';
-                    }
-                    return true;
+                clientPrivileges: async ({ user }) => {
+                    // Every OAuth-client administrative action (create, read,
+                    // list, update, delete, rotate, configure-scopes) is
+                    // restricted to admins. This app has no self-service UI
+                    // for OAuth clients, so there's no reason to allow
+                    // non-admins any of these actions.
+                    return user?.role === 'admin';
                 },
             }),
         ],
@@ -117,10 +116,10 @@ curl -sS -c /tmp/m2m-cookies.txt -X POST http://localhost:8787/api/auth/sign-up/
 ```
 Expected: JSON response with a `user` object, no `role` (defaults to none/`"user"`).
 
-Attempt to register an OAuth client with that session:
+Attempt to register an OAuth client with that session, against the plugin's own session-gated `/oauth2/create-client` endpoint (this is NOT the endpoint real registration will use later — Task 3 adds a passthrough route for that, because the endpoint that actually accepts `client_credentials_scopes`, `/admin/oauth2/create-client`, is `SERVER_ONLY` and unreachable over HTTP at all. This probe only needs to prove `clientPrivileges` blocks a non-admin session, and `clientPrivileges` is checked identically on both endpoints):
 ```bash
 curl -sS -b /tmp/m2m-cookies.txt -o /tmp/m2m-response.json -w '%{http_code}\n' \
-  -X POST http://localhost:8787/api/auth/admin/oauth2/create-client \
+  -X POST http://localhost:8787/api/auth/oauth2/create-client \
   -H 'Content-Type: application/json' \
   -d '{"client_name":"probe","grant_types":["client_credentials"],"token_endpoint_auth_method":"private_key_jwt","jwks":{"keys":[]}}'
 ```
@@ -152,7 +151,7 @@ git commit -m "Add admin plugin and gate OAuth client registration to admins"
 
 **Interfaces:**
 - Consumes: `env.SERVICE_B_RESOURCE_ID` (Task 2's own new env field)
-- Produces: an `oauth_resource` row seeded at boot with `identifier = env.SERVICE_B_RESOURCE_ID`; every OAuth client registered via `POST /admin/oauth2/create-client` from here on is auto-linked to it via `oauth_client_resource` (through `clientRegistrationDefaultResources`). Task 3's registration script relies on this auto-link — it does not call a separate link endpoint.
+- Produces: an `oauth_resource` row seeded at boot with `identifier = env.SERVICE_B_RESOURCE_ID`; every OAuth client registered via `auth.api.adminCreateOAuthClient` (Task 3's passthrough route) from here on is auto-linked to it via `oauth_client_resource` (through `clientRegistrationDefaultResources`). Task 3's registration script relies on this auto-link — it does not call a separate link endpoint.
 
 - [ ] **Step 1: Add the resource tables to the schema**
 
@@ -268,15 +267,59 @@ git commit -m "Add ServiceB as a first-class OAuth resource"
 ### Task 3: ServiceA client registration script
 
 **Files:**
+- Modify: `src/index.ts` — add a thin passthrough route to the `SERVER_ONLY` admin client-registration endpoint
 - Create: `scripts/register-service-a.mjs`
 - Modify: `package.json` — add `jose` devDependency, add `register:service-a` script
 - Modify: `.gitignore` — ignore `scripts/.service-a-credentials.json`
 
 **Interfaces:**
-- Consumes: `POST /api/auth/sign-in/email` (admin session cookie), `POST /api/auth/admin/oauth2/create-client` (from Task 1/2 config)
+- Consumes: `POST /api/auth/sign-in/email` (admin session cookie), the new `POST /api/admin/oauth-clients` route added in Step 1
 - Produces: `scripts/.service-a-credentials.json` — `{ clientId: string, privateKeyJwk: JsonWebKey, publicKeyJwk: JsonWebKey }`, consumed by Task 4's smoke test script.
 
-- [ ] **Step 1: Add `jose` and a run script**
+- [ ] **Step 1: Add the passthrough route to the SERVER_ONLY admin endpoint**
+
+`@better-auth/oauth-provider`'s `POST /admin/oauth2/create-client` — the only endpoint that accepts `client_credentials_scopes` — is registered with `metadata: { SERVER_ONLY: true }` (`node_modules/@better-auth/oauth-provider/dist/authorize-Crqw4_bR.mjs:2533`), meaning better-auth refuses to expose it over HTTP; it can only be invoked from server-side code via `auth.api.adminCreateOAuthClient(...)`. The plain `POST /oauth2/create-client` HTTP endpoint doesn't accept `client_credentials_scopes` in its body schema at all, and a client with no `client_credentials_scopes` can never use the `client_credentials` grant (the plugin throws `unauthorized_client` — see `handleClientCredentialsGrant` in `introspect-6ew7sakf.mjs:2069-2071`). So a passthrough route is required — this is the plan's one exception to "pure configuration, no custom code".
+
+In `src/index.ts`, add (after the existing `/api/auth/*` routes, before `/health`):
+
+```ts
+app.post('/api/admin/oauth-clients', async (c) => {
+    const auth = getAuth(c.env);
+    return auth.api.adminCreateOAuthClient({
+        body: await c.req.json(),
+        headers: c.req.raw.headers,
+        asResponse: true,
+    });
+});
+```
+
+`asResponse: true` makes `auth.api.adminCreateOAuthClient` return a real `Response` (with whatever status `clientPrivileges`/validation produced — 401 for a non-admin session, 201 on success) instead of throwing an `APIError` that Hono would turn into a bare 500. The route does no authorization of its own — `adminCreateOAuthClient` runs the same `clientPrivileges` check from Task 1 using the session found in the forwarded `headers` (the caller's cookie).
+
+- [ ] **Step 2: Verify the route rejects a non-admin session and typechecks**
+
+```bash
+npm run typecheck
+npm run dev &
+sleep 2
+curl -sS -c /tmp/m2m-cookies2.txt -X POST http://localhost:8787/api/auth/sign-up/email \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"nonadmin2@test.local","password":"correct horse battery staple","name":"Non Admin 2"}' > /dev/null
+curl -sS -b /tmp/m2m-cookies2.txt -o /tmp/m2m-response2.json -w '%{http_code}\n' \
+  -X POST http://localhost:8787/api/admin/oauth-clients \
+  -H 'Content-Type: application/json' \
+  -d '{"client_name":"probe","grant_types":["client_credentials"],"token_endpoint_auth_method":"private_key_jwt","jwks":{"keys":[]}}'
+kill %1
+```
+Expected: `npm run typecheck` prints no errors. The curl prints `401` — the route reaches the real `SERVER_ONLY` endpoint (not a 404) and `clientPrivileges` still blocks a non-admin session through it.
+
+- [ ] **Step 3: Commit the route**
+
+```bash
+git add src/index.ts
+git commit -m "Add passthrough route to the SERVER_ONLY admin OAuth client endpoint"
+```
+
+- [ ] **Step 4: Add `jose` and a run script**
 
 ```bash
 npm install --save-dev jose@6.2.9
@@ -287,7 +330,7 @@ In `package.json`'s `"scripts"`, add:
     "register:service-a": "node scripts/register-service-a.mjs"
 ```
 
-- [ ] **Step 2: Write the registration script**
+- [ ] **Step 5: Write the registration script**
 
 Create `scripts/register-service-a.mjs`:
 
@@ -319,7 +362,7 @@ async function signIn() {
 }
 
 async function registerClient(cookie, publicJwk) {
-    const res = await fetch(`${BASE_URL}/api/auth/admin/oauth2/create-client`, {
+    const res = await fetch(`${BASE_URL}/api/admin/oauth-clients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({
@@ -354,14 +397,14 @@ console.log(`Registered ServiceA as client_id=${client.client_id}`);
 console.log('Credentials written to scripts/.service-a-credentials.json');
 ```
 
-- [ ] **Step 3: Ignore the generated credentials file**
+- [ ] **Step 6: Ignore the generated credentials file**
 
 Add to `.gitignore`:
 ```
 scripts/.service-a-credentials.json
 ```
 
-- [ ] **Step 4: Run it end-to-end against local dev**
+- [ ] **Step 7: Run it end-to-end against local dev**
 
 ```bash
 npm run dev &
@@ -377,16 +420,16 @@ ADMIN_EMAIL=admin@test.local ADMIN_PASSWORD='correct horse battery staple' npm r
 ```
 Expected: prints `Registered ServiceA as client_id=...` and writes `scripts/.service-a-credentials.json`.
 
-- [ ] **Step 5: Verify the client row and its resource link**
+- [ ] **Step 8: Verify the client row and its resource link**
 
 ```bash
 npx wrangler d1 execute DB --local --command "SELECT client_id, token_endpoint_auth_method FROM oauth_client;"
-npx wrangler d1 execute DB --local --command "SELECT c.client_id, r.identifier FROM oauth_client_resource cr JOIN oauth_client c ON c.id = cr.client_id JOIN oauth_resource r ON r.id = cr.resource_id;"
+npx wrangler d1 execute DB --local --command "SELECT c.client_id, r.identifier FROM oauth_client_resource cr JOIN oauth_client c ON c.client_id = cr.client_id JOIN oauth_resource r ON r.id = cr.resource_id;"
 kill %1
 ```
-Expected: first query shows one row with `token_endpoint_auth_method = private_key_jwt`; second query shows that client linked to `urn:service:serviceb` — confirming `clientRegistrationDefaultResources` auto-linked it without a separate call.
+Expected: first query shows one row with `token_endpoint_auth_method = private_key_jwt`; second query shows that client linked to `urn:service:serviceb` — confirming `clientRegistrationDefaultResources` auto-linked it without a separate call. (Note the join is on `oauth_client.client_id`, the public OAuth client id — `oauth_client_resource.client_id` references that column, not `oauth_client`'s internal `id`.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add scripts/register-service-a.mjs package.json package-lock.json .gitignore

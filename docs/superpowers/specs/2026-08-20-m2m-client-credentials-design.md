@@ -33,14 +33,43 @@ ServiceB.
    - `enforcePerClientResources: true` (значение по умолчанию, оставляем явно
      не меняем) — гарантирует, что клиент не получит токен для resource, к
      которому не привязан.
-   - `clientPrivileges: async ({ action, user }) => action === "create" ? user?.role === "admin" : true`
-     — ограничивает `POST /oauth2/create-client` только пользователями с
-     `role === "admin"`.
+   - `clientPrivileges: async ({ user }) => user?.role === "admin"` —
+     ограничивает вообще все административные действия над OAuth-клиентами
+     (create/read/list/update/delete/rotate/configure-scopes) только
+     пользователями с `role === "admin"`. В приложении нет self-service UI
+     для OAuth-клиентов, поэтому единое правило проще и безопаснее, чем
+     разрешать не-админам read/list/update/delete/rotate (плагин отдельно
+     проверяет владение клиентом на этих действиях, но незачем полагаться
+     только на это).
 
-3. **Регистрация ServiceA как OAuth-клиента** — через уже встроенный
-   endpoint `POST /oauth2/create-client` (часть `oauthProvider()`, отдельный
-   route не пишем). Требует сессии пользователя с `role === "admin"`. Тело
-   запроса:
+3. **Регистрация ServiceA как OAuth-клиента.** ⚠️ Обновлено по факту
+   реализации: плагиновый `POST /admin/oauth2/create-client` — единственный
+   endpoint, который принимает `client_credentials_scopes` — помечен
+   `SERVER_ONLY: true` и недоступен по HTTP вообще, только через
+   `auth.api.adminCreateOAuthClient(...)` из серверного кода. А обычный
+   `POST /oauth2/create-client` тело `client_credentials_scopes` не
+   принимает в принципе — значит зарегистрированный через него клиент
+   никогда не получит `client_credentials_scopes`, а без них
+   `client_credentials` grant у плагина всегда возвращает
+   `unauthorized_client` (проверено в исходниках плагина,
+   `handleClientCredentialsGrant`). Поэтому добавляем один тонкий
+   passthrough-route в `src/index.ts`:
+   ```ts
+   app.post('/api/admin/oauth-clients', async (c) => {
+       const auth = getAuth(c.env);
+       return auth.api.adminCreateOAuthClient({
+           body: await c.req.json(),
+           headers: c.req.raw.headers,
+           asResponse: true,
+       });
+   });
+   ```
+   `asResponse: true` заставляет `auth.api.*` вернуть настоящий `Response`
+   (с корректными статусами из `clientPrivileges`/валидации), а не бросать
+   `APIError`. Сам route не делает собственной авторизации — вся проверка
+   (сессия + `clientPrivileges`) происходит внутри
+   `adminCreateOAuthClient`. Требует сессии пользователя с
+   `role === "admin"`. Тело запроса:
    - `token_endpoint_auth_method: "private_key_jwt"`
    - `jwks: { keys: [<публичный ключ ServiceA>] }` (статический JWKS,
      без `jwksUri`)
@@ -92,7 +121,7 @@ ServiceB:
 Интеграционный тест локально (`wrangler dev` + D1 local):
 1. Сгенерировать тестовую key pair (для "ServiceA").
 2. Создать admin-пользователя (email/password + прямой SQL `role='admin'`).
-3. Через `/oauth2/create-client` (с сессией админа) зарегистрировать
+3. Через `/api/admin/oauth-clients` (с сессией админа) зарегистрировать
    ServiceA-клиента с `private_key_jwt` + статическим `jwks`.
 4. Запросить токен через `client_credentials` + `client_assertion`,
    проверить `aud`/`scope`/подпись через `/jwks`.
@@ -106,6 +135,7 @@ ServiceB:
   только один сценарий ServiceA → ServiceB.
 - Ротация ключей ServiceA через `jwksUri` — используется статический
   `jwks`, обновляется вручную при необходимости.
-- HTTP admin UI для управления клиентами — используется только встроенный
-  `/oauth2/create-client`.
+- HTTP admin UI для управления клиентами — используется только один
+  passthrough-route для регистрации (`/api/admin/oauth-clients`), без
+  read/list/update/delete/rotate маршрутов.
 - Логика валидации токена на стороне ServiceB — вне этого репозитория.
