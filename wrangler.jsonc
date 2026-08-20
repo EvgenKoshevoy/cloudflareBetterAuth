@@ -1,31 +1,29 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "imadeit-auth",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-08-19",
-  "observability": {
-    "enabled": true
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "imadeit-auth-db",
-      "database_id": "ae07e1bc-9646-4481-bcf1-f737e6468860",
-      "migrations_dir": "migrations"
-    }
-  ],
-  // Optional: KV namespace used as better-auth secondaryStorage to cache
-  // sessions and cut D1 reads on every request. Create with
-  // `wrangler kv namespace create SESSION_KV` and uncomment.
-  // "kv_namespaces": [
-  //   { "binding": "SESSION_KV", "id": "<kv-namespace-id>" }
-  // ],
-  "routes": [
-    { "pattern": "auth.imadeit.dev", "custom_domain": true }
-  ],
-  "vars": {
-    "BETTER_AUTH_URL": "https://auth.imadeit.dev",
-    "TRUSTED_ORIGINS": "https://imadeit.dev,https://www.imadeit.dev",
-    "COOKIE_DOMAIN": ".imadeit.dev"
-  }
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "cloudflarebetterauth",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-08-19",
+    "observability": {
+        "enabled": true,
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "better-auth",
+            "database_id": "ae07e1bc-9646-4481-bcf1-f737e6468860",
+            "migrations_dir": "migrations",
+        },
+    ],
+    // Optional: KV namespace used as better-auth secondaryStorage to cache
+    // sessions and cut D1 reads on every request. Create with
+    // `wrangler kv namespace create SESSION_KV` and uncomment.
+    // "kv_namespaces": [
+    //   { "binding": "SESSION_KV", "id": "<kv-namespace-id>" }
+    // ],
+    "routes": [{ "pattern": "auth.imadeit.dev", "custom_domain": true }],
+    "vars": {
+        "BETTER_AUTH_URL": "https://auth.imadeit.dev",
+        "TRUSTED_ORIGINS": "https://imadeit.dev,https://www.imadeit.dev",
+        "COOKIE_DOMAIN": ".imadeit.dev",
+    },
 }
