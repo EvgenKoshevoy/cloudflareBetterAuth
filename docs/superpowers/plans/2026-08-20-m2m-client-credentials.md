@@ -187,7 +187,12 @@ export const oauthClientResource = sqliteTable(
         resourceId: t
             .text('resource_id')
             .notNull()
-            .references(() => oauthResource.id, { onDelete: 'cascade' }),
+            // References `identifier`, not `id` — the plugin's own
+            // registration code inserts the resource identifier string
+            // (e.g. "urn:service:serviceb") into this column, per its
+            // canonical schema (oauthClientResource.resourceId.references.field
+            // === "identifier" in @better-auth/oauth-provider).
+            .references(() => oauthResource.identifier, { onDelete: 'cascade' }),
         metadata: t.text('metadata', { mode: 'json' }),
         createdAt: t.integer('created_at', { mode: 'timestamp' }),
     },
@@ -223,6 +228,7 @@ Then create your local `.dev.vars` if you haven't already (`cp .dev.vars.example
 In `src/auth.ts`, extend the `oauthProvider({...})` call from Task 1 with:
 
 ```ts
+                scopes: ['openid', 'profile', 'email', 'offline_access', 'serviceb:access'],
                 resources: [
                     {
                         identifier: env.SERVICE_B_RESOURCE_ID,
@@ -234,7 +240,7 @@ In `src/auth.ts`, extend the `oauthProvider({...})` call from Task 1 with:
                 clientRegistrationDefaultResources: [env.SERVICE_B_RESOURCE_ID],
 ```
 
-(`enforcePerClientResources: true` is already the plugin default — set explicitly here so the "no client gets a resource it isn't linked to" guarantee is visible in the config, not implied.)
+(`enforcePerClientResources: true` is already the plugin default — set explicitly here so the "no client gets a resource it isn't linked to" guarantee is visible in the config, not implied. `scopes` is the plugin's top-level allow-list — `validateClientCredentialsScopes` checks every `client_credentials_scopes` value against it independently of `resources[].allowedScopes`; without `'serviceb:access'` here, registering ServiceA with that scope always fails `invalid_scope` regardless of the resource config. The first four entries are the plugin's own defaults — restated explicitly because setting `scopes` at all replaces the default array rather than extending it.)
 
 - [ ] **Step 4: Generate and apply the migration**
 
@@ -339,6 +345,7 @@ import { generateKeyPair, exportJWK } from 'jose';
 import { writeFile } from 'node:fs/promises';
 
 const BASE_URL = process.env.AUTH_BASE_URL ?? 'http://localhost:8787';
+const ORIGIN = process.env.AUTH_ORIGIN ?? 'http://localhost:3000';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -348,9 +355,13 @@ if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
 }
 
 async function signIn() {
+    // Node's built-in fetch sends a Sec-Fetch-Mode header, which trips
+    // better-auth's CSRF check unless a trusted Origin is also present
+    // (curl doesn't send Sec-Fetch-* headers, so this only bites fetch-based
+    // clients). ORIGIN must be one of the values in TRUSTED_ORIGINS/.dev.vars.
     const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
         body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
     });
     if (!res.ok) {
@@ -424,10 +435,10 @@ Expected: prints `Registered ServiceA as client_id=...` and writes `scripts/.ser
 
 ```bash
 npx wrangler d1 execute DB --local --command "SELECT client_id, token_endpoint_auth_method FROM oauth_client;"
-npx wrangler d1 execute DB --local --command "SELECT c.client_id, r.identifier FROM oauth_client_resource cr JOIN oauth_client c ON c.client_id = cr.client_id JOIN oauth_resource r ON r.id = cr.resource_id;"
+npx wrangler d1 execute DB --local --command "SELECT c.client_id, r.identifier FROM oauth_client_resource cr JOIN oauth_client c ON c.client_id = cr.client_id JOIN oauth_resource r ON r.identifier = cr.resource_id;"
 kill %1
 ```
-Expected: first query shows one row with `token_endpoint_auth_method = private_key_jwt`; second query shows that client linked to `urn:service:serviceb` — confirming `clientRegistrationDefaultResources` auto-linked it without a separate call. (Note the join is on `oauth_client.client_id`, the public OAuth client id — `oauth_client_resource.client_id` references that column, not `oauth_client`'s internal `id`.)
+Expected: first query shows one row with `token_endpoint_auth_method = private_key_jwt`; second query shows that client linked to `urn:service:serviceb` — confirming `clientRegistrationDefaultResources` auto-linked it without a separate call. (Both joins are on the plugin's own identifier columns, not internal `id`s: `oauth_client_resource.client_id` references `oauth_client.client_id`, and `oauth_client_resource.resource_id` references `oauth_resource.identifier`.)
 
 - [ ] **Step 9: Commit**
 
