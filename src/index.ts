@@ -31,6 +31,15 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => {
     return getAuth(c.env).handler(c.req.raw);
 });
 
+app.post('/api/admin/oauth-clients', async (c) => {
+    const auth = getAuth(c.env);
+    return auth.api.adminCreateOAuthClient({
+        body: await c.req.json(),
+        headers: c.req.raw.headers,
+        asResponse: true,
+    });
+});
+
 app.get('/health', (c) => c.json({ ok: true }));
 
 export default app;
