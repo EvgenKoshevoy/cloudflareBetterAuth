@@ -1,3 +1,15 @@
+-- NOTE: this PRAGMA foreign_keys=OFF/ON pair is drizzle-kit's standard
+-- SQLite table-rebuild pattern (used whenever a `sqlite` dialect migration
+-- needs to recreate a table, e.g. to change its foreign keys/indexes) and was
+-- not hand-written. A whole-branch review flagged D1's PRAGMA support as
+-- historically partial and asked whether this exact pattern is safe on real
+-- (non---local-emulated) D1. No evidence either way was found in this repo's
+-- vendored wrangler/drizzle-kit packages (no changelog, no explicit
+-- allow/deny list for `foreign_keys`), and this environment has no
+-- cloud/deploy access to test against real D1. Left as drizzle-kit generated
+-- it rather than hand-edited, to avoid drift from what `db:generate` would
+-- produce next time. If this migration ever fails against a real remote D1
+-- instance, that is the first thing to suspect.
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_oauth_client_resource` (
 	`id` text PRIMARY KEY NOT NULL,

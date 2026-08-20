@@ -62,7 +62,7 @@ checking it's been replaced.)
 wrangler secret put BETTER_AUTH_SECRET
 ```
 
-`BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are plain vars in `wrangler.jsonc` — update `TRUSTED_ORIGINS` to match whatever origins call this auth server.
+`BETTER_AUTH_URL`, `TRUSTED_ORIGINS`, and `SERVICE_B_RESOURCE_ID` are plain vars in `wrangler.jsonc` — update `TRUSTED_ORIGINS` to match whatever origins call this auth server. `SERVICE_B_RESOURCE_ID` is the RFC 8707 resource identifier ServiceB is registered under (see [M2M authorization](#m2m-authorization-service-to-service) below); `.dev.vars.example` already sets it to `urn:service:serviceb` for local dev.
 
 ### Custom domain
 
@@ -95,7 +95,14 @@ npm run deploy
 ## Endpoints
 
 - `GET/POST /api/auth/*` — better-auth handler (sign-up, sign-in, sessions, etc.)
+- `POST /api/admin/oauth-clients` — admin-only passthrough to the OAuth client registration endpoint (see [M2M authorization](#m2m-authorization-service-to-service) below)
 - `GET /health` — liveness check
+
+The `admin` plugin also exposes better-auth's full admin API (list-users,
+set-role, ban-user, impersonate-user, and more) under `/api/auth/admin/*`,
+not just the `role` field this project uses for the OAuth-client gate above —
+grant the `admin` role accordingly, since it carries more privilege than
+"can register OAuth clients."
 
 ## Client usage
 
@@ -155,7 +162,12 @@ minutes, and a unique `jti` (each `jti` may be used once).
 
 Fetch `https://auth.imadeit.dev/api/auth/jwks`, verify the access token's
 signature against it, and check `aud` includes `urn:service:serviceb` and
-`scope` includes the scopes ServiceB requires.
+`scope` includes the scopes ServiceB requires. Also check that `sub` equals
+ServiceA's registered `client_id`: `client_credentials` (M2M) tokens set `sub`
+to the client id, while user-delegated tokens (authorization-code /
+refresh-token grants) set `sub` to the user id — `aud` + `scope` alone
+can't distinguish a genuine M2M token from a user-delegated one that happens
+to carry the same scope and resource.
 
 ### Smoke test
 

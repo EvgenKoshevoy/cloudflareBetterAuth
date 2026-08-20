@@ -564,7 +564,7 @@ sleep 2
 npm run test:m2m
 kill %1
 ```
-Expected: five `PASS:` lines, `All M2M checks passed`, exit code 0. If ServiceA wasn't already registered in this D1 instance, run Task 3's Step 4 first.
+Expected: seven `PASS:` lines, `All M2M checks passed`, exit code 0. If ServiceA wasn't already registered in this D1 instance, run Task 3's Step 7 first.
 
 - [ ] **Step 4: Document the flow in README**
 
