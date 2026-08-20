@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
-import { jwt } from 'better-auth/plugins';
+import { admin, jwt } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { createDb } from './db';
 import * as schema from './db/schema';
@@ -31,9 +31,18 @@ export function createAuth(env: Env) {
         },
         plugins: [
             jwt(),
+            admin(),
             oauthProvider({
                 loginPage: '/sign-in',
                 consentPage: '/consent',
+                clientPrivileges: async ({ user }) => {
+                    // Every OAuth-client administrative action (create, read,
+                    // list, update, delete, rotate, configure-scopes) is
+                    // restricted to admins. This app has no self-service UI
+                    // for OAuth clients, so there's no reason to allow
+                    // non-admins any of these actions.
+                    return user?.role === 'admin';
+                },
             }),
         ],
         ...(env.COOKIE_DOMAIN
