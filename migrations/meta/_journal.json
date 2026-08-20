@@ -36,6 +36,13 @@
       "when": 1787234063936,
       "tag": "0004_sweet_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787260088372,
+      "tag": "0005_add_jwks_table",
+      "breakpoints": true
     }
   ]
 }

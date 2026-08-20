@@ -110,3 +110,55 @@ export const authClient = createAuthClient({
 ```
 
 Cross-subdomain cookies are enabled (`advanced.crossSubDomainCookies`, domain `.imadeit.dev`), so a session issued by `auth.imadeit.dev` is valid on `imadeit.dev` and its other subdomains.
+
+## M2M authorization (service-to-service)
+
+ServiceA authenticates to this auth service with a JWT it signs with its own
+private key (RFC 7523 `private_key_jwt`), and receives an access token scoped
+to ServiceB via OAuth2 `client_credentials` (RFC 8707 `resource` parameter).
+No shared secrets are involved.
+
+### One-time setup
+
+1. Create a normal user via `/api/auth/sign-up/email`, then promote it to
+   admin directly in D1 (no self-service promotion exists):
+   ```bash
+   npx wrangler d1 execute DB --local --command \
+     "UPDATE user SET role = 'admin' WHERE email = 'you@example.com';"
+   ```
+2. Register ServiceA as an OAuth client:
+   ```bash
+   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... npm run register:service-a
+   ```
+   This generates an RS256 key pair, registers the public half with
+   `token_endpoint_auth_method: private_key_jwt`, and writes the private key
+   to `scripts/.service-a-credentials.json` (gitignored — treat it like the
+   real ServiceA secret in dev; in production ServiceA generates and holds
+   its own key, and only the public JWK is sent to this endpoint).
+
+### Requesting a token (what ServiceA does in production)
+
+```bash
+curl -X POST https://auth.imadeit.dev/api/auth/oauth2/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode "client_assertion=$SIGNED_JWT" \
+  --data-urlencode 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \
+  --data-urlencode 'resource=urn:service:serviceb'
+```
+
+`$SIGNED_JWT` is a JWT signed with ServiceA's private key: `iss`/`sub` =
+ServiceA's `client_id`, `aud` = the token endpoint URL, `exp` within 5
+minutes, and a unique `jti` (each `jti` may be used once).
+
+### Validating the token (what ServiceB does)
+
+Fetch `https://auth.imadeit.dev/api/auth/jwks`, verify the access token's
+signature against it, and check `aud` includes `urn:service:serviceb` and
+`scope` includes the scopes ServiceB requires.
+
+### Smoke test
+
+`npm run test:m2m` drives the whole flow (happy path, replay rejection,
+expired-assertion rejection, unlinked-resource rejection) against a local
+`wrangler dev` + D1, using the client registered by `register:service-a`.

@@ -12,7 +12,8 @@
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:studio": "drizzle-kit studio",
         "typecheck": "tsc --noEmit",
-        "register:service-a": "node scripts/register-service-a.mjs"
+        "register:service-a": "node scripts/register-service-a.mjs",
+        "test:m2m": "node scripts/m2m-smoke-test.mjs"
     },
     "dependencies": {
         "@better-auth/drizzle-adapter": "1.7.1",

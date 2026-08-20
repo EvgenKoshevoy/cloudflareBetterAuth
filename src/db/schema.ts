@@ -227,6 +227,19 @@ export const oauthResource = sqliteTable('oauth_resource', {
     metadata: t.text('metadata', { mode: 'json' }),
 });
 
+// Signing keys for the `jwt()` plugin (used to sign OAuth access tokens /
+// ID tokens and to serve /api/auth/jwks). Not part of the oauth-provider
+// plugin's own schema - this is better-auth core's jwt plugin table.
+export const jwks = sqliteTable('jwks', {
+    id: t.text('id').primaryKey(),
+    publicKey: t.text('public_key').notNull(),
+    privateKey: t.text('private_key').notNull(),
+    createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+    expiresAt: t.integer('expires_at', { mode: 'timestamp' }),
+    alg: t.text('alg'),
+    crv: t.text('crv'),
+});
+
 export const oauthClientResource = sqliteTable(
     'oauth_client_resource',
     {
