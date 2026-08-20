@@ -5,3 +5,4 @@ dist
 worker-configuration.d.ts
 *.log
 .DS_Store
+scripts/.service-a-credentials.json

@@ -1,0 +1,65 @@
+import { generateKeyPair, exportJWK } from 'jose';
+import { writeFile } from 'node:fs/promises';
+
+const BASE_URL = process.env.AUTH_BASE_URL ?? 'http://localhost:8787';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+// Node's built-in fetch (undici) sends `Sec-Fetch-Mode: cors` on every
+// request, which trips better-auth's CSRF check into requiring a trusted
+// Origin header (curl and browser same-origin requests don't hit this).
+// Must match an entry in TRUSTED_ORIGINS.
+const ORIGIN = process.env.AUTH_ORIGIN ?? 'http://localhost:3000';
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    console.error('Set ADMIN_EMAIL and ADMIN_PASSWORD (an existing user with role=admin) before running.');
+    process.exit(1);
+}
+
+async function signIn() {
+    const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
+        body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD }),
+    });
+    if (!res.ok) {
+        throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
+    }
+    const setCookie = res.headers.get('set-cookie');
+    if (!setCookie) throw new Error('sign-in succeeded but no session cookie was returned');
+    return setCookie.split(';')[0];
+}
+
+async function registerClient(cookie, publicJwk) {
+    const res = await fetch(`${BASE_URL}/api/admin/oauth-clients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({
+            client_name: 'ServiceA',
+            grant_types: ['client_credentials'],
+            token_endpoint_auth_method: 'private_key_jwt',
+            jwks: { keys: [publicJwk] },
+            client_credentials_scopes: ['serviceb:access'],
+        }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+        throw new Error(`create-client failed: ${res.status} ${JSON.stringify(body)}`);
+    }
+    return body;
+}
+
+const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
+const kid = `service-a-${Date.now()}`;
+const publicJwk = { ...(await exportJWK(publicKey)), kid, alg: 'RS256', use: 'sig' };
+const privateJwk = { ...(await exportJWK(privateKey)), kid, alg: 'RS256', use: 'sig' };
+
+const cookie = await signIn();
+const client = await registerClient(cookie, publicJwk);
+
+await writeFile(
+    new URL('./.service-a-credentials.json', import.meta.url),
+    JSON.stringify({ clientId: client.client_id, privateKeyJwk: privateJwk, publicKeyJwk: publicJwk }, null, 2),
+);
+
+console.log(`Registered ServiceA as client_id=${client.client_id}`);
+console.log('Credentials written to scripts/.service-a-credentials.json');

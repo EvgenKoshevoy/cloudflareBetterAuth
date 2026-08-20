@@ -11,7 +11,8 @@
         "db:migrate:local": "wrangler d1 migrations apply DB --local",
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:studio": "drizzle-kit studio",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "register:service-a": "node scripts/register-service-a.mjs"
     },
     "dependencies": {
         "@better-auth/drizzle-adapter": "1.7.1",
@@ -22,6 +23,7 @@
     },
     "devDependencies": {
         "drizzle-kit": "0.31.10",
+        "jose": "^6.2.9",
         "typescript": "7.0.2",
         "wrangler": "4.124.0"
     }
