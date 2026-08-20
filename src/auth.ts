@@ -43,6 +43,14 @@ export function createAuth(env: Env) {
                     // non-admins any of these actions.
                     return user?.role === 'admin';
                 },
+                // The plugin's own `scopes` allow-list (defaulting to just
+                // the OIDC user-delegated scopes) gates every
+                // client_credentials_scopes value at registration time,
+                // independently of `resources[].allowedScopes` - without
+                // 'serviceb:access' here, registering any client for the
+                // client_credentials grant against ServiceB fails with
+                // invalid_scope.
+                scopes: ['openid', 'profile', 'email', 'offline_access', 'serviceb:access'],
                 resources: [
                     {
                         identifier: env.SERVICE_B_RESOURCE_ID,

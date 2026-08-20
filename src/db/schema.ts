@@ -238,7 +238,12 @@ export const oauthClientResource = sqliteTable(
         resourceId: t
             .text('resource_id')
             .notNull()
-            .references(() => oauthResource.id, { onDelete: 'cascade' }),
+            // References the resource's `identifier` (e.g. "urn:service:serviceb"),
+            // not its internal `id` - the plugin's own canonical schema
+            // (@better-auth/oauth-provider) declares this FK against
+            // oauthResource.identifier and inserts the identifier string
+            // directly as resourceId when linking resources.
+            .references(() => oauthResource.identifier, { onDelete: 'cascade' }),
         metadata: t.text('metadata', { mode: 'json' }),
         createdAt: t.integer('created_at', { mode: 'timestamp' }),
     },
