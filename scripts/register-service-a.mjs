@@ -24,9 +24,16 @@ async function signIn() {
     if (!res.ok) {
         throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
     }
-    const setCookie = res.headers.get('set-cookie');
-    if (!setCookie) throw new Error('sign-in succeeded but no session cookie was returned');
-    return setCookie.split(';')[0];
+    // Use getSetCookie() (standard in Node 18.16+; this project targets
+    // Node 24) rather than headers.get('set-cookie'): Node's fetch (undici)
+    // joins multiple Set-Cookie headers with ", " under get(), which is not
+    // safely splittable back into individual cookies (cookie values can
+    // legally contain commas). better-auth's cookie-cache can set more than
+    // one Set-Cookie header (session token + cached session data), so a
+    // single-cookie assumption silently drops the second one.
+    const setCookies = res.headers.getSetCookie();
+    if (!setCookies.length) throw new Error('sign-in succeeded but no session cookie was returned');
+    return setCookies.map((cookie) => cookie.split(';')[0]).join('; ');
 }
 
 async function registerClient(cookie, publicJwk) {

@@ -32,9 +32,30 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => {
 });
 
 app.post('/api/admin/oauth-clients', async (c) => {
+    // Mirror the CORS/trusted-origin gate already applied to /api/auth/* above.
+    // This route sits outside that prefix (it's a thin passthrough to the
+    // SERVER_ONLY admin OAuth client endpoint), but it is still driven by an
+    // admin's session cookie, and crossSubDomainCookies (see COOKIE_DOMAIN in
+    // src/auth.ts) makes any subdomain same-site for cookie purposes. Reject
+    // requests carrying an Origin that isn't trusted, when TRUSTED_ORIGINS is
+    // configured, so a compromised subdomain can't drive this endpoint with a
+    // leaked/stolen admin cookie.
+    const allowedOrigins = c.env.TRUSTED_ORIGINS ? c.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim()) : [];
+    const origin = c.req.header('Origin');
+    if (allowedOrigins.length > 0 && origin && !allowedOrigins.includes(origin)) {
+        return c.json({ error: 'invalid_request' }, 400);
+    }
+
+    let body: Record<string, unknown>;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json({ error: 'invalid_request' }, 400);
+    }
+
     const auth = getAuth(c.env);
     return auth.api.adminCreateOAuthClient({
-        body: await c.req.json(),
+        body,
         headers: c.req.raw.headers,
         asResponse: true,
     });
