@@ -1,65 +1,208 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable } from 'drizzle-orm/sqlite-core';
+import * as t from 'drizzle-orm/sqlite-core';
 
 // Schema matches better-auth's core tables (user, session, account, verification).
 // Update by hand if you add plugins/fields to src/auth.ts, then `npm run db:generate`.
 
-export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  emailVerified: integer("email_verified", { mode: "boolean" }).notNull(),
-  image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-}, (t) => [
-  uniqueIndex("user_email_idx").on(t.email),
-]);
+export const user = sqliteTable(
+    'user',
+    {
+        id: t.text('id').primaryKey(),
+        name: t.text('name').notNull(),
+        email: t.text('email').notNull().unique(),
+        emailVerified: t.integer('email_verified', { mode: 'boolean' }).notNull(),
+        image: t.text('image'),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp' }).notNull(),
+    },
+    (table) => [t.uniqueIndex('user_email_idx').on(table.email)],
+);
 
-export const session = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  token: text("token").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-}, (t) => [
-  uniqueIndex("session_token_idx").on(t.token),
-  index("session_user_id_idx").on(t.userId),
-]);
+export const session = sqliteTable(
+    'session',
+    {
+        id: t.text('id').primaryKey(),
+        userId: t
+            .text('user_id')
+            .notNull()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        token: t.text('token').notNull().unique(),
+        expiresAt: t.integer('expires_at', { mode: 'timestamp' }).notNull(),
+        ipAddress: t.text('ip_address'),
+        userAgent: t.text('user_agent'),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp' }).notNull(),
+    },
+    (table) => [t.uniqueIndex('session_token_idx').on(table.token), t.index('session_user_id_idx').on(table.userId)],
+);
 
-export const account = sqliteTable("account", {
-  id: text("id").primaryKey(),
-  issuer: text("issuer").notNull(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: integer("access_token_expires_at", { mode: "timestamp" }),
-  refreshTokenExpiresAt: integer("refresh_token_expires_at", { mode: "timestamp" }),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-}, (t) => [
-  index("account_user_id_idx").on(t.userId),
-  uniqueIndex("account_issuer_account_id_idx").on(t.issuer, t.accountId),
-]);
+export const account = sqliteTable(
+    'account',
+    {
+        id: t.text('id').primaryKey(),
+        userId: t
+            .text('user_id')
+            .notNull()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        issuer: t.text('issuer').notNull(),
+        accountId: t.text('account_id').notNull(),
+        providerId: t.text('provider_id').notNull(),
+        accessToken: t.text('access_token'),
+        refreshToken: t.text('refresh_token'),
+        accessTokenExpiresAt: t.integer('access_token_expires_at', { mode: 'timestamp' }),
+        refreshTokenExpiresAt: t.integer('refresh_token_expires_at', { mode: 'timestamp' }),
+        scope: t.text('scope'),
+        idToken: t.text('id_token'),
+        password: t.text('password'),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp' }).notNull(),
+    },
+    (table) => [t.index('account_user_id_idx').on(table.userId), t.uniqueIndex('account_issuer_account_id_idx').on(table.issuer, table.accountId)],
+);
 
-export const verification = sqliteTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }),
-  updatedAt: integer("updated_at", { mode: "timestamp" }),
-}, (t) => [
-  index("verification_identifier_idx").on(t.identifier),
-]);
+export const verification = sqliteTable(
+    'verification',
+    {
+        id: t.text('id').primaryKey(),
+        identifier: t.text('identifier').notNull(),
+        value: t.text('value').notNull(),
+        expiresAt: t.integer('expires_at', { mode: 'timestamp' }).notNull(),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp' }),
+    },
+    (table) => [t.index('verification_identifier_idx').on(table.identifier)],
+);
+
+export const oauthClient = sqliteTable(
+    'oauth_client',
+    {
+        id: t.text('id').primaryKey(),
+        clientId: t.text('client_id').notNull().unique(),
+        clientSecret: t.text('client_secret'),
+        disabled: t.integer('disabled', { mode: 'boolean' }),
+        skipConsent: t.integer('skip_consent', { mode: 'boolean' }),
+        enableEndSession: t.integer('enable_end_session', { mode: 'boolean' }),
+        subjectType: t.text('subject_type'),
+        scopes: t.text('scopes', { mode: 'json' }).$type<string[]>(),
+        clientCredentialsScopes: t.text('client_credentials_scopes', { mode: 'json' }).$type<string[]>(),
+        userId: t.text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+        referenceId: t.text('reference_id'),
+        createdAt: t.integer('created_at', { mode: 'timestamp' }),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp' }),
+        name: t.text('name'),
+        uri: t.text('uri'),
+        icon: t.text('icon'),
+        contacts: t.text('contacts', { mode: 'json' }).$type<string[]>(),
+        tos: t.text('tos'),
+        policy: t.text('policy'),
+        softwareId: t.text('software_id'),
+        softwareVersion: t.text('software_version'),
+        softwareStatement: t.text('software_statement'),
+        redirectUris: t.text('redirect_uris', { mode: 'json' }).$type<string[]>().notNull(),
+        postLogoutRedirectUris: t.text('post_logout_redirect_uris', { mode: 'json' }).$type<string[]>(),
+        backchannelLogoutUri: t.text('backchannel_logout_uri'),
+        backchannelLogoutSessionRequired: t.integer('backchannel_logout_session_required', { mode: 'boolean' }),
+        tokenEndpointAuthMethod: t.text('token_endpoint_auth_method'),
+        applicationType: t.text('application_type'),
+        jwks: t.text('jwks'),
+        jwksUri: t.text('jwks_uri'),
+        grantTypes: t.text('grant_types', { mode: 'json' }).$type<string[]>(),
+        responseTypes: t.text('response_types', { mode: 'json' }).$type<string[]>(),
+        clientDiscoveryId: t.text('client_discovery_id'),
+        requirePKCE: t.integer('require_pkce', { mode: 'boolean' }),
+        dpopBoundAccessTokens: t.integer('dpop_bound_access_tokens', { mode: 'boolean' }),
+        metadata: t.text('metadata', { mode: 'json' }),
+    },
+    (table) => [t.index('oauth_client_user_id_idx').on(table.userId)],
+);
+
+export const oauthRefreshToken = sqliteTable(
+    'oauth_refresh_token',
+    {
+        id: t.text('id').primaryKey(),
+        token: t.text('token').notNull().unique(),
+        clientId: t
+            .text('client_id')
+            .notNull()
+            .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+        sessionId: t.text('session_id').references(() => session.id, { onDelete: 'set null' }),
+        userId: t
+            .text('user_id')
+            .notNull()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        referenceId: t.text('reference_id'),
+        authorizationCodeId: t.text('authorization_code_id'),
+        resources: t.text('resources', { mode: 'json' }).$type<string[]>(),
+        requestedUserInfoClaims: t.text('requested_user_info_claims', { mode: 'json' }).$type<string[]>(),
+        scopes: t.text('scopes', { mode: 'json' }).$type<string[]>().notNull(),
+        revoked: t.integer('revoked', { mode: 'timestamp_ms' }),
+        rotatedAt: t.integer('rotated_at', { mode: 'timestamp_ms' }),
+        rotationReplayResponse: t.text('rotation_replay_response'),
+        rotationReplayExpiresAt: t.integer('rotation_replay_expires_at', { mode: 'timestamp_ms' }),
+        authTime: t.integer('auth_time', { mode: 'timestamp_ms' }),
+        createdAt: t.integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+        expiresAt: t.integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+        confirmation: t.text('confirmation', { mode: 'json' }),
+    },
+    (table) => [
+        t.index('oauth_refresh_token_client_id_idx').on(table.clientId),
+        t.index('oauth_refresh_token_session_id_idx').on(table.sessionId),
+        t.index('oauth_refresh_token_user_id_idx').on(table.userId),
+        t.index('oauth_refresh_token_authorization_code_id_idx').on(table.authorizationCodeId),
+    ],
+);
+
+export const oauthAccessToken = sqliteTable(
+    'oauth_access_token',
+    {
+        id: t.text('id').primaryKey(),
+        token: t.text('token').notNull().unique(),
+        clientId: t
+            .text('client_id')
+            .notNull()
+            .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+        sessionId: t.text('session_id').references(() => session.id, { onDelete: 'set null' }),
+        refreshId: t.text('refresh_id').references(() => oauthRefreshToken.id, { onDelete: 'cascade' }),
+        userId: t.text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+        referenceId: t.text('reference_id'),
+        authorizationCodeId: t.text('authorization_code_id'),
+        resources: t.text('resources', { mode: 'json' }).$type<string[]>(),
+        requestedUserInfoClaims: t.text('requested_user_info_claims', { mode: 'json' }).$type<string[]>(),
+        scopes: t.text('scopes', { mode: 'json' }).$type<string[]>().notNull(),
+        createdAt: t.integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+        expiresAt: t.integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+        confirmation: t.text('confirmation', { mode: 'json' }),
+        revoked: t.integer('revoked', { mode: 'timestamp_ms' }),
+    },
+    (table) => [
+        t.index('oauth_access_token_client_id_idx').on(table.clientId),
+        t.index('oauth_access_token_session_id_idx').on(table.sessionId),
+        t.index('oauth_access_token_user_id_idx').on(table.userId),
+        t.index('oauth_access_token_refresh_id_idx').on(table.refreshId),
+        t.index('oauth_access_token_authorization_code_id_idx').on(table.authorizationCodeId),
+    ],
+);
+
+export const oauthConsent = sqliteTable(
+    'oauth_consent',
+    {
+        id: t.text('id').primaryKey(),
+        userId: t.text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+        clientId: t
+            .text('client_id')
+            .notNull()
+            .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+        referenceId: t.text('reference_id'),
+        resources: t.text('resources', { mode: 'json' }).$type<string[]>(),
+        scopes: t.text('scopes', { mode: 'json' }).$type<string[]>().notNull(),
+        requestedUserInfoClaims: t.text('requested_user_info_claims', { mode: 'json' }).$type<string[]>(),
+        createdAt: t.integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+        updatedAt: t.integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+    },
+    (table) => [t.index('oauth_consent_client_id_idx').on(table.clientId), t.index('oauth_consent_user_id_idx').on(table.userId)],
+);
+
+export const oauthClientAssertion = sqliteTable('oauth_client_assertion', {
+    id: t.text('id').primaryKey(),
+    expiresAt: t.integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+});
