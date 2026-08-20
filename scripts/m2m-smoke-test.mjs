@@ -58,23 +58,47 @@ if (happy.body.access_token) {
     check('access token scope includes serviceb:access', (payload.scope ?? '').split(' ').includes('serviceb:access'));
 }
 
-// 2. Replay: reusing the same jti must be rejected
+// 2. Replay: reusing the same jti must be rejected. Assert the *first* use
+// actually succeeded before attempting the replay - otherwise a first
+// request that failed for an unrelated reason would make the "replay
+// rejected" check below pass vacuously (the second request would also be
+// rejected, but not because it was a replay).
 const replayJti = crypto.randomUUID();
 const firstUse = await signAssertion({ jti: replayJti });
-await requestToken({ assertion: firstUse });
+const firstUseResult = await requestToken({ assertion: firstUse });
+check('replay scenario: first use of the jti succeeds', firstUseResult.status === 200);
 const replayAssertion = await signAssertion({ jti: replayJti });
 const replay = await requestToken({ assertion: replayAssertion });
-check('replayed jti is rejected', replay.status >= 400);
+// Verified empirically against a running server: the plugin reports jti
+// reuse as invalid_client ("client assertion jti has already been used"),
+// not invalid_grant.
+check('replayed jti is rejected with invalid_client', replay.body.error === 'invalid_client');
+check('replayed jti response has no access_token', replay.body.access_token === undefined);
 
-// 3. Expired assertion must be rejected
+// 3. Expired assertion must be rejected. Verified empirically: the plugin's
+// JWT verification (via jose) surfaces an expired `exp` claim as a generic
+// signature-verification failure - invalid_client, not a distinct
+// "expired" code - so that's what we assert against, not a guess.
 const expiredAssertion = await signAssertion({ exp: Math.floor(Date.now() / 1000) - 60 });
 const expired = await requestToken({ assertion: expiredAssertion });
-check('expired assertion is rejected', expired.status >= 400);
+check('expired assertion is rejected with invalid_client', expired.body.error === 'invalid_client');
+check('expired assertion response has no access_token', expired.body.access_token === undefined);
 
-// 4. Unlinked resource must be rejected
+// 4. Resource the client is genuinely not linked to must be rejected. This
+// targets 'urn:service:unlinked-test', a resource that IS configured in
+// src/auth.ts (so it exists) but is deliberately absent from
+// clientRegistrationDefaultResources (so ServiceA, and any other
+// default-registered client, is never linked to it). This is what actually
+// exercises enforcePerClientResources's per-client linkage check - unlike
+// requesting a resource identifier that isn't configured at all, which would
+// instead be rejected earlier by the "resource doesn't exist" check and
+// never reach the linkage check.
 const wrongResourceAssertion = await signAssertion();
-const wrongResource = await requestToken({ assertion: wrongResourceAssertion, resource: 'urn:service:not-linked' });
-check('request for an unlinked resource is rejected', wrongResource.status >= 400);
+const wrongResource = await requestToken({ assertion: wrongResourceAssertion, resource: 'urn:service:unlinked-test' });
+// Verified empirically against a running server: enforcePerClientResources
+// rejections use invalid_target, per RFC 8707.
+check('request for an unlinked-but-existing resource is rejected with invalid_target', wrongResource.body.error === 'invalid_target');
+check('unlinked-resource response has no access_token', wrongResource.body.access_token === undefined);
 
 if (failures > 0) {
     console.error(`${failures} check(s) failed`);
