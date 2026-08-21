@@ -3,7 +3,9 @@ import { importJWK, SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 
 const BASE_URL = process.env.AUTH_BASE_URL ?? 'http://localhost:8787';
 const TOKEN_ENDPOINT = `${BASE_URL}/api/auth/oauth2/token`;
-const RESOURCE_ID = process.env.SERVICE_B_RESOURCE_ID ?? 'urn:service:serviceb';
+// Must match the identifier scripts/register-service-a.mjs created and
+// linked ServiceA to via the admin API - nothing is seeded at boot.
+const RESOURCE_ID = 'urn:service:serviceb';
 
 const creds = JSON.parse(await readFile(new URL('./.service-a-credentials.json', import.meta.url), 'utf8'));
 const privateKey = await importJWK(creds.privateKeyJwk, 'RS256');
@@ -85,14 +87,13 @@ check('expired assertion is rejected with invalid_client', expired.body.error ==
 check('expired assertion response has no access_token', expired.body.access_token === undefined);
 
 // 4. Resource the client is genuinely not linked to must be rejected. This
-// targets 'urn:service:unlinked-test', a resource that IS configured in
-// src/auth.ts (so it exists) but is deliberately absent from
-// clientRegistrationDefaultResources (so ServiceA, and any other
-// default-registered client, is never linked to it). This is what actually
-// exercises enforcePerClientResources's per-client linkage check - unlike
-// requesting a resource identifier that isn't configured at all, which would
-// instead be rejected earlier by the "resource doesn't exist" check and
-// never reach the linkage check.
+// targets 'urn:service:unlinked-test', a resource that scripts/register-
+// service-a.mjs creates via the admin API (so it exists) but deliberately
+// never links any client to. This is what actually exercises
+// enforcePerClientResources's per-client linkage check - unlike requesting a
+// resource identifier that doesn't exist at all, which would instead be
+// rejected earlier by the "resource doesn't exist" check and never reach the
+// linkage check.
 const wrongResourceAssertion = await signAssertion();
 const wrongResource = await requestToken({ assertion: wrongResourceAssertion, resource: 'urn:service:unlinked-test' });
 // Verified empirically against a running server: enforcePerClientResources

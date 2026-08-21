@@ -62,7 +62,7 @@ checking it's been replaced.)
 wrangler secret put BETTER_AUTH_SECRET
 ```
 
-`BETTER_AUTH_URL`, `TRUSTED_ORIGINS`, and `SERVICE_B_RESOURCE_ID` are plain vars in `wrangler.jsonc` — update `TRUSTED_ORIGINS` to match whatever origins call this auth server. `SERVICE_B_RESOURCE_ID` is the RFC 8707 resource identifier ServiceB is registered under (see [M2M authorization](#m2m-authorization-service-to-service) below); `.dev.vars.example` already sets it to `urn:service:serviceb` for local dev.
+`BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are plain vars in `wrangler.jsonc` — update `TRUSTED_ORIGINS` to match whatever origins call this auth server.
 
 ### Custom domain
 
@@ -96,6 +96,9 @@ npm run deploy
 
 - `GET/POST /api/auth/*` — better-auth handler (sign-up, sign-in, sessions, etc.)
 - `POST /api/admin/oauth-clients` — admin-only passthrough to the OAuth client registration endpoint (see [M2M authorization](#m2m-authorization-service-to-service) below)
+- `POST /api/admin/oauth-resources` / `GET /api/admin/oauth-resources` — admin-only passthrough to create/list OAuth resources (RFC 8707 protected resources; see [M2M authorization](#m2m-authorization-service-to-service) below)
+- `GET/PATCH/DELETE /api/admin/oauth-resources/:identifier` — admin-only passthrough to read/update/delete a single OAuth resource
+- `POST/DELETE /api/admin/oauth-resources/:identifier/clients/:client_id` — admin-only passthrough to link/unlink a client to a resource
 - `GET /health` — liveness check
 
 The `admin` plugin also exposes better-auth's full admin API (list-users,
@@ -133,15 +136,21 @@ No shared secrets are involved.
    npx wrangler d1 execute DB --local --command \
      "UPDATE user SET role = 'admin' WHERE email = 'you@example.com';"
    ```
-2. Register ServiceA as an OAuth client:
+2. Register ServiceA as an OAuth client and its resource:
    ```bash
    ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... npm run register:service-a
    ```
-   This generates an RS256 key pair, registers the public half with
-   `token_endpoint_auth_method: private_key_jwt`, and writes the private key
-   to `scripts/.service-a-credentials.json` (gitignored — treat it like the
-   real ServiceA secret in dev; in production ServiceA generates and holds
-   its own key, and only the public JWK is sent to this endpoint).
+   Nothing is seeded at boot — this script does the whole one-time setup by
+   hand through the admin API: creates the `urn:service:serviceb` OAuth
+   resource, generates an RS256 key pair for ServiceA, registers it with
+   `token_endpoint_auth_method: private_key_jwt` (writing the private key to
+   `scripts/.service-a-credentials.json`, gitignored — treat it like the real
+   ServiceA secret in dev; in production ServiceA generates and holds its own
+   key, and only the public JWK is sent to this endpoint), and links the new
+   client to the resource via `POST /api/admin/oauth-resources/:identifier/clients/:client_id`.
+   A client only gets tokens for resources it's explicitly linked to
+   (`enforcePerClientResources`) — use the same admin endpoints to create and
+   link any other resource/client pair.
 
 ### Requesting a token (what ServiceA does in production)
 

@@ -5,5 +5,4 @@ export interface Env {
     BETTER_AUTH_URL: string;
     TRUSTED_ORIGINS?: string;
     COOKIE_DOMAIN?: string;
-    SERVICE_B_RESOURCE_ID: string;
 }

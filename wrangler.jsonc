@@ -25,6 +25,5 @@
         "BETTER_AUTH_URL": "https://auth.imadeit.dev",
         "TRUSTED_ORIGINS": "https://imadeit.dev,https://www.imadeit.dev",
         "COOKIE_DOMAIN": ".imadeit.dev",
-        "SERVICE_B_RESOURCE_ID": "urn:service:serviceb",
     },
 }

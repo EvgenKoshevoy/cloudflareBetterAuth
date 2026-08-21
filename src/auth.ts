@@ -43,6 +43,14 @@ export function createAuth(env: Env) {
                     // non-admins any of these actions.
                     return user?.role === 'admin';
                 },
+                // Mirrors clientPrivileges: every OAuth-resource administrative
+                // action (create, read, list, update, delete, link, unlink) is
+                // restricted to admins. Resources are no longer seeded from
+                // config (see resources removal below) - this is the only gate
+                // controlling who can create them.
+                resourcePrivileges: async ({ user }) => {
+                    return user?.role === 'admin';
+                },
                 // The plugin's own `scopes` allow-list (defaulting to just
                 // the OIDC user-delegated scopes) gates every
                 // client_credentials_scopes value at registration time,
@@ -67,29 +75,11 @@ export function createAuth(env: Env) {
                 // with user consent and receive a token indistinguishable from a
                 // genuine M2M client_credentials token (same aud, same scope).
                 clientRegistrationDefaultScopes: ['openid', 'profile', 'email', 'offline_access'],
-                resources: [
-                    {
-                        identifier: env.SERVICE_B_RESOURCE_ID,
-                        name: 'ServiceB',
-                        allowedScopes: ['serviceb:access'],
-                    },
-                    {
-                        // Exists so the M2M smoke test can exercise
-                        // enforcePerClientResources's per-client linkage check
-                        // against a resource that is genuinely configured but to
-                        // which no client is ever linked (it is intentionally
-                        // absent from clientRegistrationDefaultResources below).
-                        // Without a resource like this, requesting an unknown
-                        // resource identifier is rejected by the "resource
-                        // doesn't exist" check before the linkage check ever
-                        // runs, leaving the linkage check untested.
-                        identifier: 'urn:service:unlinked-test',
-                        name: 'Unlinked Test Resource (no client should ever be linked to this)',
-                        allowedScopes: [],
-                    },
-                ],
+                // No config-seeded resources and no auto-linking: every
+                // resource and every client-resource link is created by hand
+                // through the admin API (POST /api/admin/oauth-resources and
+                // its /clients/:client_id link route in src/index.ts).
                 enforcePerClientResources: true,
-                clientRegistrationDefaultResources: [env.SERVICE_B_RESOURCE_ID],
             }),
         ],
         ...(env.COOKIE_DOMAIN
