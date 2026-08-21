@@ -36,13 +36,14 @@ app.post('/api/admin/oauth-clients', async (c) => {
     // This route sits outside that prefix (it's a thin passthrough to the
     // SERVER_ONLY admin OAuth client endpoint), but it is still driven by an
     // admin's session cookie, and crossSubDomainCookies (see COOKIE_DOMAIN in
-    // src/auth.ts) makes any subdomain same-site for cookie purposes. Reject
-    // requests carrying an Origin that isn't trusted, when TRUSTED_ORIGINS is
-    // configured, so a compromised subdomain can't drive this endpoint with a
-    // leaked/stolen admin cookie.
+    // src/auth.ts) makes any subdomain same-site for cookie purposes. When
+    // TRUSTED_ORIGINS is configured, require a matching Origin header - a
+    // missing Origin is rejected too (not just a mismatched one), so a
+    // compromised subdomain can't drive this endpoint with a leaked/stolen
+    // admin cookie by simply omitting the header.
     const allowedOrigins = c.env.TRUSTED_ORIGINS ? c.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim()) : [];
     const origin = c.req.header('Origin');
-    if (allowedOrigins.length > 0 && origin && !allowedOrigins.includes(origin)) {
+    if (allowedOrigins.length > 0 && (!origin || !allowedOrigins.includes(origin))) {
         return c.json({ error: 'invalid_request' }, 400);
     }
 
@@ -53,10 +54,17 @@ app.post('/api/admin/oauth-clients', async (c) => {
         return c.json({ error: 'invalid_request' }, 400);
     }
 
+    // Forward only the Cookie header - that's all the plugin's session
+    // lookup needs - rather than the full request header set, so this
+    // passthrough can't relay anything else to the plugin unexamined.
+    const cookie = c.req.header('Cookie');
+    const forwardedHeaders = new Headers();
+    if (cookie) forwardedHeaders.set('Cookie', cookie);
+
     const auth = getAuth(c.env);
     return auth.api.adminCreateOAuthClient({
         body,
-        headers: c.req.raw.headers,
+        headers: forwardedHeaders,
         asResponse: true,
     });
 });
