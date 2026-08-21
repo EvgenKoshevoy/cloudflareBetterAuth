@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
-import { createAuth } from './auth';
+import { createAuth, refreshOAuthScopes } from './auth';
 import type { Env } from './env';
 
 // Reuse the better-auth instance across requests within the same isolate -
@@ -9,10 +9,15 @@ import type { Env } from './env';
 // stable reference for the lifetime of the isolate.
 let cached: { env: Env; auth: ReturnType<typeof createAuth> } | undefined;
 
-function getAuth(env: Env) {
+// Refreshed on every call (cheap no-op unless oauth_resource actually
+// changed - see refreshOAuthScopes) so a resource created or edited through
+// the admin routes below is reflected in the oauth-provider's scopes
+// allow-list on the very next request, without rebuilding `cached.auth`.
+async function getAuth(env: Env) {
     if (!cached || cached.env !== env) {
         cached = { env, auth: createAuth(env) };
     }
+    await refreshOAuthScopes(cached.auth, env);
     return cached.auth;
 }
 
@@ -28,8 +33,8 @@ app.use('/api/auth/*', (c, next) => {
     })(c, next);
 });
 
-app.on(['GET', 'POST'], '/api/auth/*', (c) => {
-    return getAuth(c.env).handler(c.req.raw);
+app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
+    return (await getAuth(c.env)).handler(c.req.raw);
 });
 
 // Shared guard for every /api/admin/* passthrough route below. Each of these
@@ -70,8 +75,8 @@ async function adminPassthrough(c: Context<{ Bindings: Env }>, call: (headers: H
 }
 
 app.post('/api/admin/oauth-clients', (c) =>
-    adminPassthrough(c, (headers, body) =>
-        getAuth(c.env).api.adminCreateOAuthClient({
+    adminPassthrough(c, async (headers, body) =>
+        (await getAuth(c.env)).api.adminCreateOAuthClient({
             body: body as Record<string, unknown>,
             headers,
             asResponse: true,
@@ -80,12 +85,12 @@ app.post('/api/admin/oauth-clients', (c) =>
 );
 
 app.post('/api/admin/oauth-resources', (c) =>
-    adminPassthrough(c, (headers, body) =>
+    adminPassthrough(c, async (headers, body) =>
         // `identifier` is required by the endpoint's own zod schema (enforced
         // at runtime, returning a 400 when absent) but the body arriving here
         // is unvalidated client JSON - cast past the stricter compile-time
         // shape rather than duplicating that schema in this thin passthrough.
-        getAuth(c.env).api.adminCreateOAuthResource({
+        (await getAuth(c.env)).api.adminCreateOAuthResource({
             body: body as { identifier: string },
             headers,
             asResponse: true,
@@ -94,8 +99,8 @@ app.post('/api/admin/oauth-resources', (c) =>
 );
 
 app.get('/api/admin/oauth-resources', (c) =>
-    adminPassthrough(c, (headers) =>
-        getAuth(c.env).api.adminListOAuthResources({
+    adminPassthrough(c, async (headers) =>
+        (await getAuth(c.env)).api.adminListOAuthResources({
             headers,
             asResponse: true,
         }),
@@ -103,8 +108,8 @@ app.get('/api/admin/oauth-resources', (c) =>
 );
 
 app.get('/api/admin/oauth-resources/:identifier', (c) =>
-    adminPassthrough(c, (headers) =>
-        getAuth(c.env).api.adminGetOAuthResource({
+    adminPassthrough(c, async (headers) =>
+        (await getAuth(c.env)).api.adminGetOAuthResource({
             params: { identifier: c.req.param('identifier') },
             headers,
             asResponse: true,
@@ -113,8 +118,8 @@ app.get('/api/admin/oauth-resources/:identifier', (c) =>
 );
 
 app.patch('/api/admin/oauth-resources/:identifier', (c) =>
-    adminPassthrough(c, (headers, body) =>
-        getAuth(c.env).api.adminUpdateOAuthResource({
+    adminPassthrough(c, async (headers, body) =>
+        (await getAuth(c.env)).api.adminUpdateOAuthResource({
             params: { identifier: c.req.param('identifier') },
             body: body as Record<string, unknown>,
             headers,
@@ -124,8 +129,8 @@ app.patch('/api/admin/oauth-resources/:identifier', (c) =>
 );
 
 app.delete('/api/admin/oauth-resources/:identifier', (c) =>
-    adminPassthrough(c, (headers) =>
-        getAuth(c.env).api.adminDeleteOAuthResource({
+    adminPassthrough(c, async (headers) =>
+        (await getAuth(c.env)).api.adminDeleteOAuthResource({
             params: { identifier: c.req.param('identifier') },
             headers,
             asResponse: true,
@@ -134,8 +139,8 @@ app.delete('/api/admin/oauth-resources/:identifier', (c) =>
 );
 
 app.post('/api/admin/oauth-resources/:identifier/clients/:client_id', (c) =>
-    adminPassthrough(c, (headers) =>
-        getAuth(c.env).api.adminLinkClientResource({
+    adminPassthrough(c, async (headers) =>
+        (await getAuth(c.env)).api.adminLinkClientResource({
             params: { identifier: c.req.param('identifier'), client_id: c.req.param('client_id') },
             headers,
             asResponse: true,
@@ -144,8 +149,8 @@ app.post('/api/admin/oauth-resources/:identifier/clients/:client_id', (c) =>
 );
 
 app.delete('/api/admin/oauth-resources/:identifier/clients/:client_id', (c) =>
-    adminPassthrough(c, (headers) =>
-        getAuth(c.env).api.adminUnlinkClientResource({
+    adminPassthrough(c, async (headers) =>
+        (await getAuth(c.env)).api.adminUnlinkClientResource({
             params: { identifier: c.req.param('identifier'), client_id: c.req.param('client_id') },
             headers,
             asResponse: true,
