@@ -123,36 +123,120 @@ Cross-subdomain cookies are enabled (`advanced.crossSubDomainCookies`, domain `.
 
 ## M2M authorization (service-to-service)
 
-ServiceA authenticates to this auth service with a JWT it signs with its own
-private key (RFC 7523 `private_key_jwt`), and receives an access token scoped
-to ServiceB via OAuth2 `client_credentials` (RFC 8707 `resource` parameter).
-No shared secrets are involved.
+A calling service authenticates to this auth service with a JWT it signs with
+its own private key (RFC 7523 `private_key_jwt`), and receives an access
+token scoped to a target service via OAuth2 `client_credentials` (RFC 8707
+`resource` parameter). No shared secrets are involved.
 
-### One-time setup
+Two concepts, both admin-API-driven, nothing seeded at boot — this service
+has no built-in knowledge of any particular resource or client; every one is
+created by hand through the endpoints below and lives only in the database:
 
-1. Create a normal user via `/api/auth/sign-up/email`, then promote it to
-   admin directly in D1 (no self-service promotion exists):
-   ```bash
-   npx wrangler d1 execute DB --local --command \
-     "UPDATE user SET role = 'admin' WHERE email = 'you@example.com';"
-   ```
-2. Register ServiceA as an OAuth client and its resource:
-   ```bash
-   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... npm run register:service-a
-   ```
-   Nothing is seeded at boot — this script does the whole one-time setup by
-   hand through the admin API: creates the `urn:service:serviceb` OAuth
-   resource, generates an RS256 key pair for ServiceA, registers it with
-   `token_endpoint_auth_method: private_key_jwt` (writing the private key to
-   `scripts/.service-a-credentials.json`, gitignored — treat it like the real
-   ServiceA secret in dev; in production ServiceA generates and holds its own
-   key, and only the public JWK is sent to this endpoint), and links the new
-   client to the resource via `POST /api/admin/oauth-resources/:identifier/clients/:client_id`.
-   A client only gets tokens for resources it's explicitly linked to
-   (`enforcePerClientResources`) — use the same admin endpoints to create and
-   link any other resource/client pair.
+- **OAuth resource** — the *target* service being called. An RFC 8707
+  protected resource: an `identifier` plus policy (`allowedScopes`, TTLs,
+  whether it's `disabled`, etc.).
+- **OAuth client** — the *calling* service. Registered with
+  `token_endpoint_auth_method: private_key_jwt` and its public JWK.
 
-### Requesting a token (what ServiceA does in production)
+A client only receives tokens for resources it's explicitly **linked** to
+(`enforcePerClientResources: true` in `src/auth.ts`) — creating a resource and
+a client doesn't implicitly connect them.
+
+**Scopes are the one exception to "fully API-driven."** The plugin checks
+every `client_credentials_scopes` value a client registers with against a
+fixed allow-list (`oauthProvider({ scopes: [...] })` in `src/auth.ts`) — that
+list is read once at deploy time, not from the database, and there's no admin
+endpoint that can extend it (verified against the plugin's source: the
+allow-list is captured into a private closure inside `oauthProvider(...)` and
+never re-read afterward). To keep resource/client management API-driven
+anyway, `src/auth.ts` ships a fixed, resource-agnostic CRUD vocabulary —
+`m2m:create`, `m2m:read`, `m2m:update`, `m2m:delete` — that every resource's
+`allowedScopes` and every client's `client_credentials_scopes` draws a subset
+from. A new resource never needs a code change to use these four; only
+introducing a genuinely *new* scope name beyond them does (edit `scopes` in
+`src/auth.ts` and redeploy).
+
+### 0. Get an admin session
+
+Every `/api/admin/*` route below needs an admin session cookie and, when
+`TRUSTED_ORIGINS` is set, a matching `Origin` header.
+
+```bash
+# One-time: create a user, then promote it to admin directly in D1
+# (no self-service promotion exists).
+npx wrangler d1 execute DB --local --command \
+  "UPDATE user SET role = 'admin' WHERE email = 'you@example.com';"
+
+# Sign in and capture the session cookie for the calls below.
+COOKIE=$(curl -s -i -X POST https://auth.imadeit.dev/api/auth/sign-in/email \
+  -H 'Content-Type: application/json' -H 'Origin: https://imadeit.dev' \
+  -d '{"email":"you@example.com","password":"..."}' \
+  | grep -i '^set-cookie' | sed 's/^[Ss]et-[Cc]ookie: //' | cut -d';' -f1 | paste -sd '; ' -)
+```
+
+### 1. Create the target service's resource
+
+```bash
+curl -X POST https://auth.imadeit.dev/api/admin/oauth-resources \
+  -H 'Content-Type: application/json' -H "Cookie: $COOKIE" -H 'Origin: https://imadeit.dev' \
+  -d '{
+    "identifier": "<resource-identifier>",
+    "name": "<human-readable name>",
+    "allowedScopes": ["m2m:read"]
+  }'
+```
+
+`identifier` is the RFC 8707 `resource` value callers will request and the
+`aud` claim issued tokens will carry — any absolute-URI-shaped string works
+(e.g. `urn:example:my-api`), it doesn't have to resolve. `allowedScopes` caps
+which of the fixed `m2m:*` scopes (see above) a linked client may be granted
+for this resource specifically — pick whichever subset it needs.
+
+### 2. Register the calling service as an OAuth client
+
+```bash
+curl -X POST https://auth.imadeit.dev/api/admin/oauth-clients \
+  -H 'Content-Type: application/json' -H "Cookie: $COOKIE" -H 'Origin: https://imadeit.dev' \
+  -d '{
+    "client_name": "<calling service name>",
+    "grant_types": ["client_credentials"],
+    "token_endpoint_auth_method": "private_key_jwt",
+    "jwks": { "keys": [ <calling service public JWK> ] },
+    "client_credentials_scopes": ["m2m:read"]
+  }'
+```
+
+Returns `client_id` (and the rest of the registered client record). The
+calling service generates its own RS256/ES256 key pair and holds the private
+key itself — only the public JWK is ever sent here. `jwks` above is a static
+key set; use `jwks_uri` instead if the service can host its own JWKS and
+wants to rotate keys without re-registering.
+
+### 3. Link the client to the resource
+
+```bash
+curl -X POST "https://auth.imadeit.dev/api/admin/oauth-resources/<resource-identifier>/clients/$CLIENT_ID" \
+  -H "Cookie: $COOKIE" -H 'Origin: https://imadeit.dev'
+```
+
+No body — both identifiers are in the path. Re-linking an already-linked pair
+is a no-op (`{"linked":true,"alreadyLinked":true}`), so this is safe to retry.
+
+### Managing resources and links later
+
+- `GET /api/admin/oauth-resources` — list all resources
+- `GET /api/admin/oauth-resources/:identifier` — read one
+- `PATCH /api/admin/oauth-resources/:identifier` — update policy (e.g.
+  `{"disabled": true}` to kill a resource without deleting it, or change
+  `allowedScopes`)
+- `DELETE /api/admin/oauth-resources/:identifier` — delete a resource
+- `DELETE /api/admin/oauth-resources/:identifier/clients/:client_id` — unlink
+  a client from a resource (revokes its ability to request that `resource`
+  going forward; existing tokens already issued aren't retroactively revoked)
+
+All of the above require the same admin cookie + `Origin` header as steps 1–3.
+
+### Requesting a token (what the calling service does in production)
 
 ```bash
 curl -X POST https://auth.imadeit.dev/api/auth/oauth2/token \
@@ -160,26 +244,21 @@ curl -X POST https://auth.imadeit.dev/api/auth/oauth2/token \
   --data-urlencode 'grant_type=client_credentials' \
   --data-urlencode "client_assertion=$SIGNED_JWT" \
   --data-urlencode 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \
-  --data-urlencode 'resource=urn:service:serviceb'
+  --data-urlencode 'resource=<resource-identifier>'
 ```
 
-`$SIGNED_JWT` is a JWT signed with ServiceA's private key: `iss`/`sub` =
-ServiceA's `client_id`, `aud` = the token endpoint URL, `exp` within 5
-minutes, and a unique `jti` (each `jti` may be used once).
+`$SIGNED_JWT` is a JWT signed with the calling service's private key:
+`iss`/`sub` = its registered `client_id`, `aud` = the token endpoint URL,
+`exp` within 5 minutes, and a unique `jti` (each `jti` may be used once —
+replays are rejected).
 
-### Validating the token (what ServiceB does)
+### Validating the token (what the target service does)
 
 Fetch `https://auth.imadeit.dev/api/auth/jwks`, verify the access token's
-signature against it, and check `aud` includes `urn:service:serviceb` and
-`scope` includes the scopes ServiceB requires. Also check that `sub` equals
-ServiceA's registered `client_id`: `client_credentials` (M2M) tokens set `sub`
-to the client id, while user-delegated tokens (authorization-code /
-refresh-token grants) set `sub` to the user id — `aud` + `scope` alone
-can't distinguish a genuine M2M token from a user-delegated one that happens
-to carry the same scope and resource.
-
-### Smoke test
-
-`npm run test:m2m` drives the whole flow (happy path, replay rejection,
-expired-assertion rejection, unlinked-resource rejection) against a local
-`wrangler dev` + D1, using the client registered by `register:service-a`.
+signature against it, and check `aud` includes its own resource identifier
+and `scope` includes whatever it requires. Also check that `sub` equals the
+calling client's `client_id`: `client_credentials` (M2M) tokens set `sub` to
+the client id, while user-delegated tokens (authorization-code /
+refresh-token grants) set `sub` to the user id — `aud` + `scope` alone can't
+distinguish a genuine M2M token from a user-delegated one that happens to
+carry the same scope and resource.

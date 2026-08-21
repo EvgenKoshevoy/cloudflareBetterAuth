@@ -251,7 +251,7 @@ export const oauthClientResource = sqliteTable(
         resourceId: t
             .text('resource_id')
             .notNull()
-            // References the resource's `identifier` (e.g. "urn:service:serviceb"),
+            // References the resource's `identifier` (e.g. "urn:example:api"),
             // not its internal `id` - the plugin's own canonical schema
             // (@better-auth/oauth-provider) declares this FK against
             // oauthResource.identifier and inserts the identifier string

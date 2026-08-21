@@ -51,29 +51,37 @@ export function createAuth(env: Env) {
                 resourcePrivileges: async ({ user }) => {
                     return user?.role === 'admin';
                 },
-                // The plugin's own `scopes` allow-list (defaulting to just
-                // the OIDC user-delegated scopes) gates every
-                // client_credentials_scopes value at registration time,
-                // independently of `resources[].allowedScopes` - without
-                // 'serviceb:access' here, registering any client for the
-                // client_credentials grant against ServiceB fails with
-                // invalid_scope.
-                scopes: ['openid', 'profile', 'email', 'offline_access', 'serviceb:access'],
+                // The plugin's own `scopes` allow-list gates every
+                // client_credentials_scopes value at registration time
+                // (validateClientCredentialsScopes in
+                // @better-auth/oauth-provider/dist/introspect-*.mjs checks
+                // each requested scope against this exact array) - it's fixed
+                // at deploy time, not DB-driven, so it can't be extended
+                // through the admin API. The four m2m:* scopes below are a
+                // generic CRUD vocabulary, deliberately not named after any
+                // particular resource: every resource created via
+                // POST /api/admin/oauth-resources picks whichever subset it
+                // needs for its own `allowedScopes` (e.g. a read-only
+                // resource might allow only 'm2m:read'), and every client's
+                // `client_credentials_scopes` is likewise a subset of these -
+                // both fully API-driven from here on. Only introducing a
+                // genuinely new scope literal (a fifth one, beyond this
+                // fixed CRUD set) requires editing this array and
+                // redeploying.
+                scopes: ['openid', 'profile', 'email', 'offline_access', 'm2m:create', 'm2m:read', 'm2m:update', 'm2m:delete'],
                 // Newly registered clients (dynamic registration and any future
                 // non-admin registration path) get this as their default
-                // delegated-scope ceiling instead of the full `scopes` list above.
-                // Deliberately excludes 'serviceb:access': that scope must stay in
-                // the master `scopes` allow-list (client_credentials_scopes
+                // delegated-scope ceiling instead of the full `scopes` list
+                // above. Deliberately excludes the m2m:* scopes: they must stay
+                // in the master `scopes` allow-list (client_credentials_scopes
                 // validation checks against it independently, see
                 // validateClientCredentialsScopes in
-                // @better-auth/oauth-provider/dist/introspect-*.mjs), but it must
-                // NOT be a default capability for a newly registered client. Without
-                // this, a future browser-facing authorization-code client -
-                // registered through the same client-creation path and
-                // auto-linked to ServiceB by clientRegistrationDefaultResources
-                // below - could request scope=serviceb:access&resource=<ServiceB>
-                // with user consent and receive a token indistinguishable from a
-                // genuine M2M client_credentials token (same aud, same scope).
+                // @better-auth/oauth-provider/dist/introspect-*.mjs), but must
+                // NOT be a default capability for a newly registered client -
+                // otherwise a future browser-facing authorization-code client,
+                // registered through the same client-creation path, could
+                // request an m2m:* scope with user consent and receive a token
+                // indistinguishable from a genuine M2M client_credentials token.
                 clientRegistrationDefaultScopes: ['openid', 'profile', 'email', 'offline_access'],
                 // No config-seeded resources and no auto-linking: every
                 // resource and every client-resource link is created by hand
